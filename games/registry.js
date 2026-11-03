@@ -1,0 +1,43 @@
+const games = [
+  {
+    id: "faction-war",
+    title: "Faction War",
+    description: "Game strategi live dua faksi. Penonton memilih tim lewat komentar, gift, atau tap like untuk memanggil Knight, Mage, Beast, dan Boss. Pasukan bertarung merebut wilayah sampai salah satu tim menang.",
+    icon: "⚔️",
+    status: "Siap dimainkan",
+    entry: "games/faction-war/index.html",
+    accent: "rgba(255, 90, 82, .22)"
+  }
+];
+
+const list = document.getElementById("game-list");
+const count = document.getElementById("game-count");
+
+count.textContent = `${games.length} game`;
+list.innerHTML = games.map((game) => `
+  <article class="game-card" style="--accent-glow: ${game.accent}">
+    <div class="game-card-top">
+      <span class="game-icon" aria-hidden="true">${game.icon}</span>
+      <span class="game-status">${game.status}</span>
+    </div>
+    <h3>${game.title}</h3>
+    <p>${game.description}</p>
+    <a href="${game.entry}" data-game-window="${game.id}" aria-label="Buka ${game.title} di jendela baru" title="Buka ${game.title} di jendela game">Buka game <span aria-hidden="true">↗</span></a>
+  </article>
+`).join("") || '<p class="empty-state">Belum ada game di library.</p>';
+
+list.addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-game-window]");
+  if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+  event.preventDefault();
+  const width = window.screen.availWidth || 1440;
+  const height = window.screen.availHeight || 900;
+  const features = [
+    "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=no", "resizable=yes",
+    `width=${width}`, `height=${height}`, "left=0", "top=0"
+  ].join(",");
+  const gameWindow = window.open(link.href, `game-window-${link.dataset.gameWindow}`, features);
+  if (gameWindow) gameWindow.focus();
+  else window.location.assign(link.href);
+});

@@ -1,0 +1,112 @@
+{
+  "source": "SiberLiveConnection",
+  "purpose": "Sanitized reference fixture from a short LIVE observation; not a captured raw dump.",
+  "observedDate": "2026-11-04",
+  "streamer": "anissusant1_",
+  "observation": {
+    "approximateDurationSeconds": 60,
+    "eventFrames": {
+      "comment": 7,
+      "gift": 5,
+      "like": 11
+    },
+    "privacy": "Viewer IDs, handles, and comment text are placeholders. Field names and listed event values reflect observed events."
+  },
+  "listenerPayloadSamples": {
+    "comment": {
+      "eventName": "chat",
+      "payload": {
+        "content": "<redacted comment text>",
+        "user": {
+          "id": "<redacted user id>",
+          "displayId": "<redacted handle>",
+          "nickname": "<redacted nickname>"
+        }
+      },
+      "observedFieldTypes": {
+        "content": "string",
+        "user.id": "string",
+        "user.displayId": "string",
+        "user.nickname": "string"
+      },
+      "notes": [
+        "Two observed comment lengths were 12 and 4 characters; the actual text is not stored.",
+        "msgId was not present in the sampled events."
+      ]
+    },
+    "giftCombo": {
+      "eventName": "gift",
+      "giftId": "5655",
+      "gift": {
+        "id": "5655",
+        "name": "Rose",
+        "type": 1,
+        "diamondCount": 1
+      },
+      "observedComboFrames": [
+        { "repeatCount": 1, "repeatEnd": false },
+        { "repeatCount": 2, "repeatEnd": false },
+        { "repeatCount": 2, "repeatEnd": true }
+      ],
+      "observedFieldTypes": {
+        "giftId": "string",
+        "gift.name": "string",
+        "gift.type": "number",
+        "gift.diamondCount": "number",
+        "repeatCount": "number",
+        "repeatEnd": "boolean"
+      },
+      "notes": [
+        "The final combo frame has repeatEnd=true and the final repeatCount.",
+        "Intermediate combo frames should be skipped to avoid counting the gift more than once."
+      ]
+    },
+    "like": {
+      "eventName": "like",
+      "payloadSamples": [
+        { "count": 15, "total": "32083" },
+        { "count": 10, "total": "32108" }
+      ],
+      "user": {
+        "id": "<redacted user id>",
+        "displayId": "<redacted handle>",
+        "nickname": "<redacted nickname>"
+      },
+      "observedFieldTypes": {
+        "count": "number",
+        "total": "string"
+      },
+      "notes": [
+        "count is the like increment in that event.",
+        "total is the cumulative room count and arrives as a string."
+      ]
+    }
+  },
+  "normalizedBridgeExamples": {
+    "comment": {
+      "eventType": "comment",
+      "username": "<redacted handle>",
+      "userId": "<redacted user id>",
+      "avatarUrl": "<profile image URL placeholder>",
+      "comment": "<redacted comment text>"
+    },
+    "giftComboFinal": {
+      "eventType": "gift",
+      "username": "<redacted handle>",
+      "userId": "<redacted user id>",
+      "avatarUrl": "<profile image URL placeholder>",
+      "giftName": "Rose",
+      "giftId": "5655",
+      "giftCount": 2,
+      "coinValue": 1
+    },
+    "like": {
+      "eventType": "like",
+      "username": "<redacted handle>",
+      "userId": "<redacted user id>",
+      "avatarUrl": "<profile image URL placeholder>",
+      "likeCount": 15
+    }
+  },
+  "bridgeGap": "The current normalized like contract forwards likeCount but does not yet include the observed cumulative total field."
+}

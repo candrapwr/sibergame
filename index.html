@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10111d" />
+    <meta name="author" content="DataSiberLab" />
+    <meta name="description" content="Game Hub DataSiberLab untuk game live interaktif." />
+    <title>Game Hub</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="games/registry.js"></script>
+  </head>
+  <body>
+    <main class="hub-shell">
+      <header class="hub-header">
+        <div class="brand-mark" aria-hidden="true">GW</div>
+        <div>
+          <p class="eyebrow">LIVE GAME PLATFORM</p>
+          <h1>Game Hub</h1>
+          <p class="intro">Hubungkan akun TikTok LIVE terlebih dahulu. Setelah terhubung, semua game siap menerima event live.</p>
+        </div>
+      </header>
+
+      <section class="connection-panel" id="connection-panel" data-connection-state="disconnected" aria-labelledby="connection-title">
+        <div class="connection-visual" aria-hidden="true">
+          <div class="signal-orbit orbit-one"></div>
+          <div class="signal-orbit orbit-two"></div>
+          <div class="signal-core"><span class="signal-icon">♪</span></div>
+          <span class="signal-pulse pulse-one"></span>
+          <span class="signal-pulse pulse-two"></span>
+          <span class="signal-pulse pulse-three"></span>
+        </div>
+
+        <div class="connection-content">
+          <p class="eyebrow">TIKTOK LIVE LISTENER</p>
+          <h2 id="connection-title">Hubungkan akun LIVE</h2>
+          <p class="connection-copy" id="connection-copy">Masukkan username akun TikTok yang sedang live untuk mulai menghubungkan listener.</p>
+
+          <form id="connection-form" class="connection-form">
+            <label for="tiktok-username">Username TikTok</label>
+            <div class="username-control">
+              <span aria-hidden="true">@</span>
+              <input id="tiktok-username" name="username" type="text" placeholder="username" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="50" required />
+              <button id="connect-button" type="submit"><span>Hubungkan</span><span aria-hidden="true">↗</span></button>
+            </div>
+            <p class="form-hint">Akun harus sedang melakukan siaran LIVE agar koneksi berhasil.</p>
+          </form>
+
+          <div class="connection-progress" id="connection-progress" aria-live="polite" aria-atomic="true">
+            <div class="progress-heading">
+              <span class="progress-spinner" aria-hidden="true"></span>
+              <strong id="connection-status-title">Belum terhubung</strong>
+            </div>
+            <p id="connection-status-message">Listener akan memeriksa akun, mencari room LIVE, lalu membuka koneksi.</p>
+            <ol class="connection-steps" aria-label="Tahap koneksi">
+              <li data-connection-step="account">Akun</li>
+              <li data-connection-step="room">Room LIVE</li>
+              <li data-connection-step="socket">Koneksi</li>
+            </ol>
+            <p class="connection-error" id="connection-error" role="alert" hidden></p>
+          </div>
+
+          <div class="connection-ready" id="connection-ready" hidden>
+            <span class="ready-indicator" aria-hidden="true"></span>
+            <span>Terhubung sebagai <strong id="connected-username"></strong></span>
+            <button id="change-account-button" type="button">Ganti akun</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="library" id="game-library" aria-labelledby="library-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LIBRARY</p>
+            <h2 id="library-title">Daftar Game</h2>
+          </div>
+          <span id="game-count" class="count-badge">0 game</span>
+        </div>
+        <div id="game-list" class="game-grid" aria-live="polite"></div>
+      </section>
+
+      <footer class="hub-footer" id="hub-footer">
+        <div class="hub-footer-note">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span>Game hanya dibuka setelah koneksi TikTok LIVE berhasil.</span>
+        </div>
+        <div class="hub-project-meta" aria-label="Informasi pengembang">
+          <span>Pengembang <strong>DataSiberLab</strong></span>
+          <a href="mailto:candrapwr@datasiber.com">candrapwr@datasiber.com</a>
+          <a href="https://game.idsiber.com" target="_blank" rel="noopener noreferrer">game.idsiber.com <span aria-hidden="true">↗</span></a>
+        </div>
+      </footer>
+    </main>
+    <script type="module" src="shared/tiktok/hub-gate.js"></script>
+  </body>
+</html>

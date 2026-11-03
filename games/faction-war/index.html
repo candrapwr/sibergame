@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10111d" />
+    <title>Faction War — Live Arena</title>
+    <link rel="stylesheet" href="styles.css" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+    <script type="module" src="boot.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="stage" aria-label="Arena Faction War">
+        <canvas id="game-canvas" width="1080" height="1920" aria-label="Pertempuran Faction War"></canvas>
+        <div class="bottom-base" role="group" aria-label="Kontrol game">
+          <div class="bottom-base-inner">
+            <div class="team-picker" role="group" aria-label="Pilih tim troop">
+              <button class="team-select red selected" type="button" data-select-team="RED" aria-pressed="true">Red</button>
+              <button class="team-select blue" type="button" data-select-team="BLUE" aria-pressed="false">Blue</button>
+            </div>
+
+            <div class="dock-divider" aria-hidden="true"></div>
+
+            <div class="match-actions" role="group" aria-label="Mulai atau reset game">
+              <button class="dock-action back" id="back-to-dashboard" type="button" aria-label="Kembali ke dashboard" title="Kembali ke dashboard">
+                <span class="action-icon" aria-hidden="true">⌂</span><span class="action-label">Menu</span>
+              </button>
+              <button class="dock-action start" id="start-game" type="button" aria-label="Mulai game" title="Mulai game">
+                <span class="action-icon" aria-hidden="true">▶</span><span class="action-label">Mulai</span>
+              </button>
+              <button class="dock-action reset" id="reset-game" type="button" aria-label="Reset game" title="Reset game">
+                <span class="action-icon" aria-hidden="true">↻</span><span class="action-label">Reset</span>
+              </button>
+              <button class="dock-action settings" id="settings-button" type="button" aria-label="Pengaturan game" title="Pengaturan game">
+                <span class="action-icon" aria-hidden="true">⚙</span><span class="action-label">Atur</span>
+              </button>
+            </div>
+
+            <div class="dock-divider troop-divider" aria-hidden="true"></div>
+
+            <div class="troop-picker" role="group" aria-label="Simulasi spawn troop">
+              <button class="troop-icon-button" type="button" data-spawn="knight" aria-label="Spawn Knight" title="Spawn Knight">
+                <img alt="" data-red-src="assets/images/troop_red_knight.png" data-blue-src="assets/images/troop_blue_knight.png" src="assets/images/troop_red_knight.png" />
+                <span>Knight</span>
+              </button>
+              <button class="troop-icon-button" type="button" data-spawn="mage" aria-label="Spawn Mage" title="Spawn Mage">
+                <img alt="" data-red-src="assets/images/troop_red_mage.png" data-blue-src="assets/images/troop_blue_mage.png" src="assets/images/troop_red_mage.png" />
+                <span>Mage</span>
+              </button>
+              <button class="troop-icon-button" type="button" data-spawn="beast" aria-label="Spawn Beast" title="Spawn Beast">
+                <img alt="" data-red-src="assets/images/troop_red_beast.png" data-blue-src="assets/images/troop_blue_beast.png" src="assets/images/troop_red_beast.png" />
+                <span>Beast</span>
+              </button>
+              <button class="troop-icon-button boss" type="button" data-spawn="boss" aria-label="Summon Boss" title="Summon Boss">
+                <img alt="" data-red-src="assets/images/boss_red_golem_front.png" data-blue-src="assets/images/boss_blue_golem_front.png" src="assets/images/boss_red_golem_front.png" />
+                <span>Boss</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+        <form class="settings-form" id="settings-form">
+          <header class="settings-heading">
+            <div>
+              <p class="settings-kicker">GAME SETUP</p>
+              <h2 id="settings-title">Pengaturan Game</h2>
+              <p class="settings-description">Atur judul arena dan nama kedua tim.</p>
+            </div>
+            <button class="settings-close" id="settings-close" type="button" aria-label="Tutup pengaturan">×</button>
+          </header>
+
+          <nav class="settings-tabs" role="tablist" aria-label="Kategori pengaturan">
+            <button class="settings-tab active" id="tab-general" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-settings-tab="general">General</button>
+            <button class="settings-tab" id="tab-gift" type="button" role="tab" aria-selected="false" aria-controls="panel-gift" data-settings-tab="gift">Gift</button>
+          </nav>
+
+          <section class="settings-tab-panel" id="panel-general" role="tabpanel" aria-labelledby="tab-general" data-settings-panel="general">
+            <label class="settings-field">
+              <span>Judul game</span>
+              <input id="setting-game-title" name="gameTitle" type="text" maxlength="32" autocomplete="off" />
+            </label>
+            <div class="settings-team-fields">
+              <label class="settings-field">
+                <span>Nama tim merah</span>
+                <input id="setting-red-team" name="redTeam" type="text" maxlength="18" autocomplete="off" />
+              </label>
+              <label class="settings-field">
+                <span>Nama tim biru</span>
+                <input id="setting-blue-team" name="blueTeam" type="text" maxlength="18" autocomplete="off" />
+              </label>
+            </div>
+            <fieldset class="settings-display-options">
+              <legend>Tampilan di atas troop</legend>
+              <label class="settings-display-option">
+                <input id="setting-show-avatar" type="checkbox" checked />
+                <span><strong>Tampilkan avatar</strong><small>Foto profil gifter</small></span>
+              </label>
+              <label class="settings-display-option">
+                <input id="setting-show-username" type="checkbox" checked />
+                <span><strong>Tampilkan username</strong><small>Label nama gifter</small></span>
+              </label>
+            </fieldset>
+            <fieldset class="settings-display-options settings-legend-options">
+              <legend>Tampilan arena</legend>
+              <label class="settings-display-option">
+                <input id="setting-show-gift-legend" type="checkbox" checked />
+                <span><strong>Tampilkan legenda gift</strong><small>Ikon troop dan gift di sisi arena</small></span>
+              </label>
+            </fieldset>
+            <fieldset class="settings-display-options settings-live-options">
+              <legend>Interaksi LIVE</legend>
+              <label class="settings-display-option">
+                <input id="setting-like-troops-enabled" type="checkbox" checked />
+                <span><strong>Aktifkan tap like</strong><small>Like dihitung per username</small></span>
+              </label>
+              <label class="settings-like-threshold">
+                <span>Like untuk 1 troop</span>
+                <div><input id="setting-likes-per-troop" type="number" min="1" max="1000000" step="1" /><small>like</small></div>
+              </label>
+            </fieldset>
+            <fieldset class="settings-display-options settings-audio-options">
+              <legend>Efek suara</legend>
+              <label class="settings-display-option">
+                <input id="setting-sound-enabled" type="checkbox" checked />
+                <span><strong>Aktifkan suara</strong><small>Suara saat troop muncul dan menyerang</small></span>
+              </label>
+              <label class="settings-volume-setting" for="setting-sound-volume">
+                <span><strong>Volume</strong><output id="setting-sound-volume-value" for="setting-sound-volume">42%</output></span>
+                <input id="setting-sound-volume" type="range" min="0" max="100" step="1" value="42" aria-label="Volume efek suara" />
+              </label>
+            </fieldset>
+            <fieldset class="settings-display-options settings-music-options">
+              <legend>Musik latar</legend>
+              <label class="settings-display-option">
+                <input id="setting-bg-music-enabled" type="checkbox" checked />
+                <span><strong>Aktifkan musik</strong><small>Diputar berulang selama game berjalan</small></span>
+              </label>
+              <label class="settings-volume-setting" for="setting-bg-music-volume">
+                <span><strong>Volume musik</strong><output id="setting-bg-music-volume-value" for="setting-bg-music-volume">25%</output></span>
+                <input id="setting-bg-music-volume" type="range" min="0" max="100" step="1" value="25" aria-label="Volume musik latar" />
+              </label>
+            </fieldset>
+          </section>
+          <section class="settings-tab-panel gift-settings-panel" id="panel-gift" role="tabpanel" aria-labelledby="tab-gift" data-settings-panel="gift" hidden>
+            <p class="gift-catalog-status" id="gift-catalog-status" role="status" aria-live="polite"></p>
+            <fieldset class="gift-mode-selector">
+              <legend>Mode pemanggilan troop</legend>
+              <label class="gift-mode-option">
+                <input type="radio" name="gift-mode" value="coin" checked />
+                <span><strong>Berdasarkan coin</strong><small>Semua gift dihitung dari nilai coin.</small></span>
+              </label>
+              <label class="gift-mode-option">
+                <input type="radio" name="gift-mode" value="gift" />
+                <span><strong>Berdasarkan gift</strong><small>Gift tertentu dipasangkan ke troop.</small></span>
+              </label>
+            </fieldset>
+
+            <div class="gift-mode-panel" data-gift-mode-panel="coin">
+              <p class="gift-mode-note">Pilih tim dengan komentar <b>join1</b> atau <b>join2</b>. Jika gift datang lebih dulu, tim awal dipilih acak dan melekat pada username gifter. Coin dihitung dari harga gift × jumlahnya.</p>
+              <div class="gift-unit-grid coin-cost-grid">
+                <label class="gift-unit-setting"><span class="gift-unit-name"><img src="assets/images/troop_red_knight.png" alt="" /><b>Knight</b></span><div><input type="number" min="1" max="1000000" step="1" data-coin-cost="knight" /><small>coin</small></div></label>
+                <label class="gift-unit-setting"><span class="gift-unit-name"><img src="assets/images/troop_red_mage.png" alt="" /><b>Mage</b></span><div><input type="number" min="1" max="1000000" step="1" data-coin-cost="mage" /><small>coin</small></div></label>
+                <label class="gift-unit-setting"><span class="gift-unit-name"><img src="assets/images/troop_red_beast.png" alt="" /><b>Beast</b></span><div><input type="number" min="1" max="1000000" step="1" data-coin-cost="beast" /><small>coin</small></div></label>
+                <label class="gift-unit-setting"><span class="gift-unit-name"><img src="assets/images/boss_red_golem_front.png" alt="" /><b>Boss</b></span><div><input type="number" min="1" max="1000000" step="1" data-coin-cost="boss" /><small>coin</small></div></label>
+              </div>
+            </div>
+
+            <div class="gift-mode-panel" data-gift-mode-panel="gift" hidden>
+              <p class="gift-mode-note">Tentukan gift masing-masing sisi langsung di kolom Merah dan Biru. Nilai coin diabaikan; komentar join tidak diperlukan.</p>
+              <div class="gift-mapping-grid">
+                <div class="gift-mapping-header"><span>Troop</span><b class="gift-team-red" data-gift-team-title="RED">Red Team</b><b class="gift-team-blue" data-gift-team-title="BLUE">Blue Team</b></div>
+                <div class="gift-mapping-row"><span class="gift-unit-name"><img src="assets/images/troop_red_knight.png" alt="" /><b>Knight</b></span><input type="hidden" data-gift-assignment="knight:RED" /><button class="gift-assignment-button" type="button" data-open-gift-picker="knight:RED" aria-label="Pilih gift Knight untuk Red Team"><img data-selected-gift-icon="knight:RED" alt="" hidden /><span><b data-selected-gift-name="knight:RED">Pilih gift</b><small data-selected-gift-price="knight:RED"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button><input type="hidden" data-gift-assignment="knight:BLUE" /><button class="gift-assignment-button" type="button" data-open-gift-picker="knight:BLUE" aria-label="Pilih gift Knight untuk Blue Team"><img data-selected-gift-icon="knight:BLUE" alt="" hidden /><span><b data-selected-gift-name="knight:BLUE">Pilih gift</b><small data-selected-gift-price="knight:BLUE"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button></div>
+                <div class="gift-mapping-row"><span class="gift-unit-name"><img src="assets/images/troop_red_mage.png" alt="" /><b>Mage</b></span><input type="hidden" data-gift-assignment="mage:RED" /><button class="gift-assignment-button" type="button" data-open-gift-picker="mage:RED" aria-label="Pilih gift Mage untuk Red Team"><img data-selected-gift-icon="mage:RED" alt="" hidden /><span><b data-selected-gift-name="mage:RED">Pilih gift</b><small data-selected-gift-price="mage:RED"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button><input type="hidden" data-gift-assignment="mage:BLUE" /><button class="gift-assignment-button" type="button" data-open-gift-picker="mage:BLUE" aria-label="Pilih gift Mage untuk Blue Team"><img data-selected-gift-icon="mage:BLUE" alt="" hidden /><span><b data-selected-gift-name="mage:BLUE">Pilih gift</b><small data-selected-gift-price="mage:BLUE"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button></div>
+                <div class="gift-mapping-row"><span class="gift-unit-name"><img src="assets/images/troop_red_beast.png" alt="" /><b>Beast</b></span><input type="hidden" data-gift-assignment="beast:RED" /><button class="gift-assignment-button" type="button" data-open-gift-picker="beast:RED" aria-label="Pilih gift Beast untuk Red Team"><img data-selected-gift-icon="beast:RED" alt="" hidden /><span><b data-selected-gift-name="beast:RED">Pilih gift</b><small data-selected-gift-price="beast:RED"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button><input type="hidden" data-gift-assignment="beast:BLUE" /><button class="gift-assignment-button" type="button" data-open-gift-picker="beast:BLUE" aria-label="Pilih gift Beast untuk Blue Team"><img data-selected-gift-icon="beast:BLUE" alt="" hidden /><span><b data-selected-gift-name="beast:BLUE">Pilih gift</b><small data-selected-gift-price="beast:BLUE"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button></div>
+                <div class="gift-mapping-row"><span class="gift-unit-name"><img src="assets/images/boss_red_golem_front.png" alt="" /><b>Boss</b></span><input type="hidden" data-gift-assignment="boss:RED" /><button class="gift-assignment-button" type="button" data-open-gift-picker="boss:RED" aria-label="Pilih gift Boss untuk Red Team"><img data-selected-gift-icon="boss:RED" alt="" hidden /><span><b data-selected-gift-name="boss:RED">Pilih gift</b><small data-selected-gift-price="boss:RED"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button><input type="hidden" data-gift-assignment="boss:BLUE" /><button class="gift-assignment-button" type="button" data-open-gift-picker="boss:BLUE" aria-label="Pilih gift Boss untuk Blue Team"><img data-selected-gift-icon="boss:BLUE" alt="" hidden /><span><b data-selected-gift-name="boss:BLUE">Pilih gift</b><small data-selected-gift-price="boss:BLUE"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button></div>
+              </div>
+            </div>
+          </section>
+
+          <footer class="settings-actions">
+            <button class="settings-cancel" id="settings-cancel" type="button">Batal</button>
+            <button class="settings-save" type="submit">Simpan</button>
+          </footer>
+        </form>
+      </dialog>
+
+      <dialog class="gift-picker-dialog" id="gift-picker-dialog" aria-labelledby="gift-picker-title">
+        <div class="gift-picker-shell">
+          <header class="gift-picker-heading">
+            <div><p class="settings-kicker">KATALOG GIFT</p><h2 id="gift-picker-title">Pilih gift</h2></div>
+            <button class="settings-close" id="gift-picker-close" type="button" aria-label="Tutup pemilih gift">×</button>
+          </header>
+          <div class="gift-picker-controls">
+            <label class="settings-field"><span>Cari nama atau ID</span><input id="gift-picker-search" type="search" placeholder="Contoh: Rose atau 5655" autocomplete="off" /></label>
+            <label class="settings-field"><span>Urutkan</span><select id="gift-picker-sort"><option value="price-asc">Harga termurah</option><option value="price-desc">Harga termahal</option><option value="name-asc">Nama A–Z</option></select></label>
+            <label class="settings-field"><span>Harga minimum (diamond)</span><input id="gift-picker-min-price" type="number" min="0" step="1" placeholder="Tidak dibatasi" /></label>
+            <label class="settings-field"><span>Harga maksimum (diamond)</span><input id="gift-picker-max-price" type="number" min="0" step="1" placeholder="Tidak dibatasi" /></label>
+          </div>
+          <p class="gift-picker-count" id="gift-picker-count" role="status" aria-live="polite"></p>
+          <div class="gift-picker-list" id="gift-picker-list" role="listbox" aria-label="Daftar gift"></div>
+          <footer class="gift-picker-footer"><span id="gift-picker-visible-count"></span><div><button class="settings-cancel" id="gift-picker-clear" type="button" hidden>Hapus pilihan</button><button class="settings-cancel" id="gift-picker-more" type="button" hidden>Tampilkan lagi</button></div></footer>
+        </div>
+      </dialog>
+
+      <dialog class="reset-dialog" id="reset-dialog" aria-labelledby="reset-dialog-title">
+        <div class="reset-dialog-content">
+          <h2 id="reset-dialog-title">Reset game?</h2>
+          <p>Troop, wilayah, dan skor ronde ini akan direset.</p>
+          <div class="reset-dialog-actions">
+            <button class="reset-cancel" id="cancel-reset" type="button">Batal</button>
+            <button class="reset-confirm" id="confirm-reset" type="button">Reset sekarang</button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog class="reset-dialog" id="leave-dialog" aria-labelledby="leave-dialog-title">
+        <div class="reset-dialog-content">
+          <h2 id="leave-dialog-title">Tutup jendela game?</h2>
+          <p>Game akan direset sebelum jendela ditutup. Skor, troop, wilayah, dan progres sesi ini akan dihapus.</p>
+          <div class="reset-dialog-actions">
+            <button class="reset-cancel" id="cancel-leave" type="button">Tetap di game</button>
+            <button class="reset-confirm" id="confirm-leave" type="button">Tutup &amp; reset</button>
+          </div>
+        </div>
+      </dialog>
+    </main>
+  </body>
+</html>

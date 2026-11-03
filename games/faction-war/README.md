@@ -1,0 +1,132 @@
+# Faction War — Dokumentasi Teknis
+
+Dokumen ini berisi detail implementasi khusus Faction War. Cara menjalankan Game Hub, listener TikTok bersama, dan kontrak event global dijelaskan di [README utama](../../README.md).
+
+## Ringkasan
+
+Faction War adalah game arena dua tim berbasis canvas. Troop muncul dari sisi timnya, berjalan menuju frontline, lalu bertarung. Jika tidak ada troop lawan yang masih aktif, tim dapat mendorong wilayah. Pertandingan selesai ketika satu tim menguasai seluruh wilayah; skor ronde dipertahankan sampai game di-reset.
+
+## Entry point dan alur startup
+
+| File | Tanggung jawab |
+| --- | --- |
+| `index.html` | Membuat canvas 1080 × 1920, kontrol bawah, dialog pengaturan, dan memuat GSAP dari CDN. |
+| `styles.css` | Layout fullscreen, kontrol, modal, serta tampilan responsif. |
+| `boot.js` | Memastikan listener LIVE terhubung, mengambil katalog gift, lalu memuat `game.js`. |
+| `game.js` | State, canvas, simulasi pertempuran, event TikTok, pengaturan, audio, dan penyimpanan. |
+| `assets/images/` | Sprite kastil, troop, boss, ikon, dan VFX. |
+| `assets/audio/` | Efek suara troop, suara kemenangan, dan musik latar. Lihat [daftar audio dan sumber lisensinya](assets/audio/README.md). |
+
+Game dibuka melalui Game Hub setelah akun LIVE tersambung. `boot.js` mendapatkan endpoint `/tiktok` dari status koneksi dan meminta katalog melalui `/api/tiktok/gifts`. Katalog disiapkan sebelum `game.js` dimuat. Tombol **Mulai** mengaktifkan simulasi dan koneksi event untuk game ini. Selama belum dimulai atau ronde sudah selesai, event TikTok tidak mengubah gameplay.
+
+Koneksi WebSocket browser memakai `ws://` pada HTTP lokal dan `wss://` pada HTTPS. Endpoint dibagikan oleh Game Hub; game tidak membuat koneksi listener kedua.
+
+## Canvas dan siklus render
+
+- Koordinat dasar canvas adalah `W = 1080`, `H = 1920`.
+- Layout arena dapat melebar pada viewport landscape. Sprite dan teks tetap mempertahankan proporsi aslinya.
+- Ketika game aktif, simulasi berjalan sekitar 30 frame per detik. State disimpan setiap 3 detik.
+- Saat game belum mulai, canvas hanya dirender ketika tampilan perlu diperbarui; tidak ada loop simulasi yang terus berjalan.
+- GSAP menggerakkan tween dan efek ambient. Jika CDN tidak tersedia atau pengguna memilih reduced motion, animasi dasar tetap ditangani oleh loop game.
+
+## Aturan pertempuran
+
+### Tim, wilayah, dan kemenangan
+
+- **Red** mulai dari sisi kiri; **Blue** mulai dari sisi kanan. Sprite troop Blue menghadap ke kiri.
+- Kapasitas gabungan wilayah adalah 300 poin. Awal ronde, masing-masing tim memegang 150 poin.
+- Posisi frontline dan persentase wilayah dihitung dari rasio wilayah yang sama.
+- Satu tim menang saat wilayahnya mencapai 300 poin. Skor tim pemenang bertambah satu, layar kemenangan muncul, lalu ronde baru dimulai sekitar 5,5 detik kemudian.
+- Pergantian ronde menghapus troop dan afiliasi viewer, tetapi mempertahankan skor. Tombol Reset menghapus skor dan mengembalikan game ke status belum dimulai.
+
+### Statistik unit
+
+HP pada tabel sudah termasuk pengali HP global ×3. Damage serangan dan kekuatan dorong adalah nilai per aksi.
+
+| Unit | HP | Damage | Dorong wilayah | Cooldown serang |
+| --- | ---: | ---: | ---: | ---: |
+| Knight | 240 | 24 | 2 | 2,8 dtk |
+| Mage | 360 | 30 | 2 | 2,8 dtk |
+| Beast | 480 | 38 | 3 | 2,8 dtk |
+| Golem Boss | 1.260 | 58 | 8 | 3,6 dtk |
+
+Troop biasa bergerak dengan kecepatan dasar 108 unit/detik, sedangkan Boss 58. Tiap unit mendapat faktor kecepatan acak 0,92–1,12 saat muncul; jarak ke frontline tidak mengubah kecepatan dasarnya.
+
+### Target dan tekanan pertempuran
+
+- Troop yang sudah mencapai frontline berhenti maju dan menyerang troop lawan yang juga berada di frontline dan cukup dekat pada sumbu horizontal.
+- Damage satu serangan dibagi rata ke semua target lawan yang memenuhi syarat serangan itu. Mage meluncurkan proyektil; unit lain memberi damage langsung.
+- Selama kedua tim memiliki troop hidup, tekanan pertempuran mengurangi HP troop secara bertahap meski tidak ada pasangan yang sedang saling menyerang. Tekanan dasar adalah 0,35 HP/detik per troop biasa atau 0,5 HP/detik per Boss, ditambah tekanan lawan `min(4.5, totalDamageLawan / 30 × 0.8)`.
+- Tekanan pasif tidak menghabisi unit: HP ditahan minimum satu. KO terjadi dari serangan langsung.
+- Frontline hanya didorong ketika tidak ada troop lawan yang masih aktif, termasuk troop lawan yang sedang berjalan menuju garis. Setelah lawan habis, troop yang tersisa mulai mendorong wilayah.
+
+## Integrasi event TikTok
+
+Event diterima melalui konektor bersama, kemudian `handleTikTokEvent()` mengubahnya menjadi aksi Faction War. Identitas viewer memakai `userId` jika tersedia, dan username sebagai fallback.
+
+| Event | Aturan Faction War |
+| --- | --- |
+| Komentar | `1` atau `join1` memilih Red; `2` atau `join2` memilih Blue. Huruf besar/kecil, spasi, `_`, dan `-` diabaikan. Komentar tim yang valid memicu aksi join dan menambah satu poin wilayah. Jika viewer berpindah tim pada mode coin, saldo coin viewer di-reset. |
+| Gift — mode coin | Nilai `coinValue × giftCount` ditambahkan ke saldo viewer. Jika belum punya tim, gift pertama memilih tim acak, menjalankan aksi join (+1 wilayah), dan afiliasi itu bertahan sampai ronde berakhir. Selama saldo cukup, unit termahal yang bisa dibayar dipanggil lebih dulu. Maksimal 50 unit diproses dari satu event gift. |
+| Gift — mode gift | ID atau nama gift dicocokkan dengan mapping unit dan tim. Setiap pengulangan gift memanggil satu unit; maksimal 25 unit diproses dari satu event. Nilai coin dan komentar pemilihan tim diabaikan. |
+| Like | Jika fitur aktif, like diakumulasi per viewer. Setiap mencapai ambang yang dikonfigurasi, satu Knight dipanggil. Viewer tanpa tim mendapat tim acak dan aksi join (+1 wilayah) saat troop like pertamanya muncul. |
+| Follow, share, join | Konektor mengenali event ini, tetapi Faction War saat ini belum memetakannya menjadi aksi permainan. |
+
+Spawn dari gift dimasukkan ke antrean dengan jeda 220 ms per unit agar combo tidak muncul serentak. Jika gift yang sama dipetakan ke lebih dari satu unit/tim, pencocokan pertama dalam urutan Knight, Mage, Beast, Boss lalu Red/Blue yang digunakan; sebaiknya setiap gift hanya dipetakan sekali.
+
+### Mode gift dan katalog
+
+Server mengunduh katalog saat koneksi LIVE dibuat dan menyediakannya sepanjang sesi melalui `/api/tiktok/gifts`. Jika katalog gagal dimuat, mode gift tidak tersedia dan mode coin tetap dapat digunakan. Tab Gift menyediakan pencarian, filter harga minimum/maksimum diamond, pengurutan, dan pemuatan daftar bertahap. Mapping disimpan berdasarkan ID gift dan dipisah untuk setiap unit serta tim.
+
+Legenda ikon di sisi arena hanya digambar ketika mode gift aktif, katalog siap, dan opsi **Tampilkan legenda gift** diaktifkan. Ikon troop/gift dan pengaturan label avatar serta username berada di canvas.
+
+## Pengaturan dan penyimpanan
+
+Pengaturan disimpan di `localStorage` menggunakan key `faction-war-ui-settings-v1` dan tidak ikut terhapus saat koneksi LIVE baru dibuat.
+
+| Pengaturan | Default |
+| --- | --- |
+| Judul dan nama Red/Blue | Faction War, Red Team, Blue Team |
+| Avatar dan username gifter | Aktif |
+| Legenda gift | Aktif |
+| Efek suara | Aktif, volume 42% |
+| Musik latar | Aktif, volume 25% |
+| Tap like | Aktif, 100 like per Knight |
+| Mode coin | Knight 1, Mage 5, Beast 15, Boss 100 coin |
+| Mapping gift | Kosong; dipilih terpisah untuk tiap unit dan tim |
+
+State pertandingan disimpan pada `game-state:faction-war`. Troop, HP, wilayah, skor, ronde, antrean spawn, tim viewer, saldo coin, dan sisa like disimpan berkala dan saat halaman ditutup. Refresh halaman melanjutkan state game. Saat Game Hub memulai sesi TikTok baru, `shared/game-session.js` menghapus key `game-state:*` untuk semua game; key pengaturan game tetap ada.
+
+Reset game menghentikan koneksi event game, membersihkan troop dan skor, mengosongkan afiliasi/saldo/like viewer, serta menghentikan audio. Pengaturan tidak ikut di-reset.
+
+## Audio dan asset
+
+- Efek spawn dan attack memiliki file terpisah untuk Knight, Mage, Beast, dan Boss. Tim Red dan Blue memakai sound yang sama.
+- `finish.wav` dimainkan saat tim menang. Efek suara dan musik latar memiliki toggle serta volume terpisah.
+- `bg1.mp3` diputar berulang selama game aktif.
+- Nama file dan sumber efek suara dicatat di [assets/audio/README.md](assets/audio/README.md). Jika file efek tertentu tidak ada, efek itu dilewati.
+- Sprite dan VFX yang dipakai canvas didefinisikan pada `imageFiles` di `game.js`.
+
+## Simulasi dan debugging browser
+
+Kontrol bawah dapat memanggil unit untuk simulasi lokal. Untuk debugging melalui DevTools, game harus sudah dimulai:
+
+```js
+window.handleGameCommand({
+  action: "SPAWN_TROOP",
+  team: "RED",
+  troopType: "knight",
+  username: "DevUser"
+});
+
+window.publishTikTokEvent({
+  eventType: "gift",
+  username: "DevUser",
+  giftId: "5655",
+  giftName: "Rose",
+  giftCount: 1,
+  coinValue: 1
+});
+```
+
+Event simulasi melewati normalisasi dan handler yang sama dengan konektor browser, sehingga aturan `game.js` yang diuji tetap merupakan aturan gameplay yang sebenarnya.
