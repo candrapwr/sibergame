@@ -1337,7 +1337,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const openSettingsPanel = setupFactionWarSettingsPanel({
     DEFAULT_SETTINGS, GIFT_UNIT_TYPES, cleanSetting, cleanPositiveCount, cleanSoundVolume,
     uiSettings, settingsOnlyMode, giftCatalog, giftCatalogById, giftCatalogReady, giftCatalogSource,
-    teamButtons, teamDisplayName, audio, requestRender
+    teamButtons, teamDisplayName, listenerSessionId, audio, requestRender
   });
 
   const selectSpawnTeam = (team) => {

@@ -60,18 +60,21 @@ if (settingsOnly && !validSettingsUsername) {
 } else {
   const endpoint = settingsOnly ? "" : await requireConnectedTikTok();
   if (settingsOnly || endpoint) {
+    const accountUsername = settingsOnly
+      ? settingsUsername
+      : String(window.tiktokConnectedUsername || "").trim().replace(/^@+/, "");
     window.factionWarSettingsOnly = settingsOnly;
-    window.factionWarSettingsUsername = settingsUsername;
+    window.factionWarSettingsUsername = accountUsername;
     if (settingsOnly) document.body.classList.add("settings-only-mode");
     if (endpoint) window.tiktokListenerEndpoint = endpoint;
 
     const giftsUrl = new URL("/api/tiktok/gifts", window.location.origin);
     giftsUrl.searchParams.set("game", "faction-war");
     giftsUrl.searchParams.set("sessionId", listenerSessionId);
-    if (settingsOnly) giftsUrl.searchParams.set("username", settingsUsername);
+    if (accountUsername) giftsUrl.searchParams.set("username", accountUsername);
     const [catalogResponse, gameSettings] = await Promise.all([
       fetch(`${giftsUrl.pathname}${giftsUrl.search}`, { cache: "no-store" }).catch(() => null),
-      loadGameSettings(settingsOnly ? settingsUsername : "")
+      loadGameSettings(accountUsername)
     ]);
     try {
       const catalog = catalogResponse?.ok ? await catalogResponse.json() : null;

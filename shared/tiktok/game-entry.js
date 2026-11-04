@@ -7,6 +7,7 @@ export async function requireConnectedTikTok() {
     if (response.ok) {
       const state = await response.json();
       if (state.status === "connected") {
+        window.tiktokConnectedUsername = String(state.username || "").trim().replace(/^@+/, "");
         const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
         return `${scheme}//${window.location.host}/tiktok?sessionId=${encodeURIComponent(sessionId)}`;
       }

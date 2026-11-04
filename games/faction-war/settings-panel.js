@@ -1,7 +1,7 @@
 export function setupFactionWarSettingsPanel({
   DEFAULT_SETTINGS, GIFT_UNIT_TYPES, cleanSetting, cleanPositiveCount, cleanSoundVolume,
   uiSettings, settingsOnlyMode, giftCatalog, giftCatalogById, giftCatalogReady, giftCatalogSource,
-  teamButtons, teamDisplayName, audio, requestRender
+  teamButtons, teamDisplayName, listenerSessionId, audio, requestRender
 }) {
   const settingsDialog = document.getElementById("settings-dialog");
   const settingsForm = document.getElementById("settings-form");
@@ -528,7 +528,9 @@ export function setupFactionWarSettingsPanel({
     setSettingsSaving(true);
     try {
       const saveUrl = new URL("/api/games/faction-war/settings", window.location.origin);
-      if (settingsOnlyMode) saveUrl.searchParams.set("username", window.factionWarSettingsUsername);
+      const accountUsername = String(window.factionWarSettingsUsername || "").trim().replace(/^@+/, "");
+      saveUrl.searchParams.set("sessionId", listenerSessionId);
+      if (accountUsername) saveUrl.searchParams.set("username", accountUsername);
       const response = await fetch(`${saveUrl.pathname}${saveUrl.search}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
