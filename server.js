@@ -3,7 +3,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, randomBytes, createHash, timingSafeEqual } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { WebSocket, WebSocketServer } = require("ws");
@@ -19,8 +19,32 @@ const {
   ControlEvent,
   normalizeUser
 } = require("./shared/tiktok/siber-live");
+const { createAdminActivityStore } = require("./shared/admin-activity-store");
 
 const ROOT = __dirname;
+
+function loadEnvironmentFile(filePath) {
+  let contents;
+  try { contents = fs.readFileSync(filePath, "utf8"); }
+  catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  for (const line of contents.split(/\r?\n/)) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match || Object.hasOwn(process.env, match[1])) continue;
+    let value = match[2];
+    const quotedValue = /^(['"])(.*)\1(?:\s+#.*)?$/.exec(value);
+    if (quotedValue) value = quotedValue[2];
+    else {
+      value = value.replace(/\s+#.*$/, "");
+    }
+    process.env[match[1]] = value;
+  }
+}
+
+loadEnvironmentFile(path.join(ROOT, ".env"));
+
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT) || 8050;
 const STATUS_IN_PROGRESS = new Set(["room_lookup", "connecting", "disconnecting"]);
@@ -28,6 +52,14 @@ const LISTENER_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[
 const LISTENER_SESSION_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ANIMATION_VIDEO_BYTES = 100 * 1024 * 1024;
 const ANIMATION_VIDEO_EXTENSIONS = new Set([".mp4", ".webm"]);
+const ADMIN_COOKIE_NAME = "sibergame_admin";
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_MAX_FAILURES = 8;
+const adminSessions = new Map();
+const adminLoginFailures = new Map();
+const adminLoggedDisconnects = new WeakSet();
+const adminActivityStore = createAdminActivityStore(ROOT);
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -66,6 +98,7 @@ const listenerSessionCleanup = setInterval(() => {
   const expiredBefore = Date.now() - LISTENER_SESSION_IDLE_TTL_MS;
   for (const [sessionId, session] of listenerSessions) {
     if (session.lastSeenAt >= expiredBefore) continue;
+    recordDisconnectActivity(session, session.connection);
     if (session.connection) void session.connection.disconnect().catch(() => {});
     for (const client of websocketServer.clients) {
       if (client.listenerSessionId === sessionId) client.close(1001, "Listener session expired");
@@ -153,14 +186,144 @@ httpServer.on("upgrade", (request, socket, head) => {
   });
 });
 
-function sendJson(response, code, body) {
+function sendJson(response, code, body, extraHeaders = {}) {
   const payload = JSON.stringify(body);
   response.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    "Content-Length": Buffer.byteLength(payload)
+    "Content-Length": Buffer.byteLength(payload),
+    ...extraHeaders
   });
   response.end(payload);
+}
+
+function recordUsageActivity(listenerSession, action, gameId = "") {
+  const username = String(listenerSession?.status?.username || "").trim();
+  if (!username) return;
+  try {
+    adminActivityStore.record({
+      username,
+      action,
+      gameId,
+      sessionId: listenerSession.status.gameSessionId || listenerSession.id
+    });
+  } catch (error) {
+    console.error("Gagal mencatat aktivitas penggunaan:", error.message);
+  }
+}
+
+function recordDisconnectActivity(listenerSession, connection) {
+  if (!connection || adminLoggedDisconnects.has(connection) || listenerSession.status.status !== "connected") return;
+  adminLoggedDisconnects.add(connection);
+  recordUsageActivity(listenerSession, "disconnected");
+}
+
+function getAdminCookieToken(request) {
+  const cookieHeader = String(request.headers.cookie || "");
+  for (const part of cookieHeader.split(";")) {
+    const [name, ...valueParts] = part.trim().split("=");
+    if (name === ADMIN_COOKIE_NAME) return valueParts.join("=");
+  }
+  return "";
+}
+
+function getAdminSession(request) {
+  const token = getAdminCookieToken(request);
+  const session = token && adminSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    adminSessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
+function adminCookie(request, token, maxAgeSeconds) {
+  const secure = request.socket.encrypted || String(request.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+  return `${ADMIN_COOKIE_NAME}=${token}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
+}
+
+function passwordMatches(candidate) {
+  const configuredHash = createHash("sha256").update(String(process.env.ADMIN_PASSWORD || "")).digest();
+  const candidateHash = createHash("sha256").update(String(candidate)).digest();
+  return timingSafeEqual(configuredHash, candidateHash);
+}
+
+function handleAdminRequest(request, response, requestUrl) {
+  const pathname = requestUrl.pathname;
+  if (pathname === "/api/admin/session" && request.method === "GET") {
+    return sendJson(response, 200, {
+      enabled: Boolean(process.env.ADMIN_PASSWORD),
+      authenticated: Boolean(process.env.ADMIN_PASSWORD && getAdminSession(request))
+    });
+  }
+
+  if (pathname === "/api/admin/login" && request.method === "POST") {
+    if (!process.env.ADMIN_PASSWORD) {
+      return sendJson(response, 503, { error: "Admin belum diaktifkan. Atur ADMIN_PASSWORD di file .env lalu restart server." });
+    }
+    const address = request.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    if (adminLoginFailures.size > 1000) {
+      for (const [failedAddress, record] of adminLoginFailures) {
+        if (record.startedAt + ADMIN_LOGIN_WINDOW_MS <= now) adminLoginFailures.delete(failedAddress);
+      }
+    }
+    let failure = adminLoginFailures.get(address);
+    if (!failure || failure.startedAt + ADMIN_LOGIN_WINDOW_MS <= now) {
+      failure = { count: 0, startedAt: now };
+      adminLoginFailures.set(address, failure);
+    }
+    if (failure.count >= ADMIN_LOGIN_MAX_FAILURES) {
+      const retryAfter = Math.max(1, Math.ceil((failure.startedAt + ADMIN_LOGIN_WINDOW_MS - now) / 1000));
+      return sendJson(response, 429, { error: "Terlalu banyak percobaan login. Coba lagi beberapa menit." }, { "Retry-After": String(retryAfter) });
+    }
+
+    return readJson(request, 4096).then((body) => {
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!passwordMatches(password)) {
+        failure.count += 1;
+        return sendJson(response, 401, { error: "Password admin salah." });
+      }
+      adminLoginFailures.delete(address);
+      for (const [sessionToken, session] of adminSessions) {
+        if (session.expiresAt <= now) adminSessions.delete(sessionToken);
+      }
+      const token = randomBytes(32).toString("hex");
+      adminSessions.set(token, { expiresAt: now + ADMIN_SESSION_TTL_MS });
+      return sendJson(response, 200, { authenticated: true }, {
+        "Set-Cookie": adminCookie(request, token, ADMIN_SESSION_TTL_MS / 1000)
+      });
+    }).catch((error) => sendJson(response, 400, { error: error.message || "Permintaan login tidak valid." }));
+  }
+
+  if (pathname === "/api/admin/logout" && request.method === "POST") {
+    const token = getAdminCookieToken(request);
+    if (token) adminSessions.delete(token);
+    return sendJson(response, 200, { authenticated: false }, {
+      "Set-Cookie": adminCookie(request, "", 0)
+    });
+  }
+
+  if (pathname === "/api/admin/usage" && request.method === "GET") {
+    if (!process.env.ADMIN_PASSWORD) {
+      return sendJson(response, 503, { error: "Admin belum diaktifkan." });
+    }
+    if (!getAdminSession(request)) return sendJson(response, 401, { error: "Login admin diperlukan." });
+    try {
+      return sendJson(response, 200, { activities: adminActivityStore.list(300) });
+    } catch (error) {
+      console.error("Gagal membaca log aktivitas admin:", error.message);
+      return sendJson(response, 500, { error: "Log aktivitas gagal dibaca." });
+    }
+  }
+
+  if (pathname.startsWith("/api/admin/")) {
+    const allowedMethods = pathname.endsWith("/login") ? "POST" : pathname.endsWith("/session") || pathname.endsWith("/usage") ? "GET" : "POST";
+    response.writeHead(405, { Allow: allowedMethods });
+    return response.end("Method Not Allowed");
+  }
+  return sendJson(response, 404, { error: "Endpoint admin tidak ditemukan." });
 }
 
 async function readJson(request, maxLength = 4096) {
@@ -408,6 +571,9 @@ async function handleAnimationVideoRequest(request, response, requestUrl) {
 async function handleRequest(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   if (requestUrl.pathname.startsWith("/api/")) {
+    if (requestUrl.pathname.startsWith("/api/admin/")) {
+      return handleAdminRequest(request, response, requestUrl);
+    }
     if (requestUrl.pathname === "/api/games/faction-war/animation-videos") {
       return handleAnimationVideoRequest(request, response, requestUrl);
     }
@@ -534,6 +700,7 @@ async function handleRequest(request, response) {
         listenerSession.status = { ...listenerSession.status, username: "", roomId: "" };
         return sendJson(response, 200, listenerSession.status);
       }
+      recordDisconnectActivity(listenerSession, current);
       setSessionStatus(listenerSession, "disconnecting", "Memutuskan koneksi TikTok LIVE…");
       try { await current.disconnect(); }
       catch (error) { console.warn("Gagal menutup koneksi TikTok dengan rapi:", error.message); }
@@ -559,6 +726,7 @@ async function handleRequest(request, response) {
     response.end("Bad Request");
     return;
   }
+  if (pathname === "/admin" || pathname === "/admin/") pathname = "/admin/index.html";
   const filePath = path.resolve(ROOT, `.${pathname === "/" ? "/index.html" : pathname}`);
   const relativePath = path.relative(ROOT, filePath);
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
@@ -585,6 +753,12 @@ async function handleRequest(request, response) {
     const target = info.isDirectory() ? path.join(filePath, "index.html") : filePath;
     const targetInfo = await fs.promises.stat(target);
     if (!targetInfo.isFile()) throw new Error("Not a file");
+    const gameEntryMatch = requestUrl.pathname.match(/^\/games\/([a-z0-9]+(?:-[a-z0-9]+)*)\/index\.html$/);
+    const listenerSessionId = requestUrl.searchParams.get("sessionId");
+    const gameListenerSession = listenerSessionId && listenerSessions.get(listenerSessionId);
+    if (gameEntryMatch && gameListenerSession?.status.status === "connected") {
+      recordUsageActivity(gameListenerSession, "game_opened", gameEntryMatch[1]);
+    }
     const extension = path.extname(target).toLowerCase();
     const contentType = MIME_TYPES[extension] || "application/octet-stream";
     const isVideo = extension === ".mp4" || extension === ".webm";
@@ -657,11 +831,13 @@ function startConnection(listenerSession, username) {
   });
   liveConnection.on(ControlEvent.DISCONNECTED, ({ code, reason }) => {
     if (listenerSession.connection !== liveConnection || listenerSession.status.status === "disconnecting") return;
+    recordDisconnectActivity(listenerSession, liveConnection);
     setSessionStatus(listenerSession, "disconnected", `Koneksi LIVE terputus${code ? ` (${code})` : ""}${reason ? `: ${String(reason)}` : ""}.`);
     clearGiftCatalog(listenerSession);
   });
   liveConnection.on(WebcastEvent.STREAM_END, () => {
     if (listenerSession.connection === liveConnection) {
+      recordDisconnectActivity(listenerSession, liveConnection);
       setSessionStatus(listenerSession, "disconnected", `Siaran LIVE @${liveConnection.uniqueId} telah berakhir.`);
       clearGiftCatalog(listenerSession);
     }
@@ -736,6 +912,7 @@ function startConnection(listenerSession, username) {
         ? `${listenerSession.giftCatalog.length} gift tersedia di pengaturan.`
         : "Katalog gift gagal dimuat; mode gift tidak tersedia.";
       setSessionStatus(listenerSession, "connected", `Terhubung ke LIVE @${liveConnection.uniqueId}. ${giftMessage}`);
+      recordUsageActivity(listenerSession, "connected");
     } catch (error) {
       if (listenerSession.connection !== liveConnection) return;
       console.warn(`[Siber Live] Koneksi @${liveConnection.uniqueId} gagal:`, error.message);

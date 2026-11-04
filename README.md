@@ -10,6 +10,10 @@ Project ini memakai pola **modular monolith**: semua game berada dalam satu proj
 ├── styles.css                    # Tampilan katalog
 ├── server.js                     # HTTP, API, WebSocket, dan listener bersama
 ├── ecosystem.config.cjs          # Konfigurasi proses PM2
+├── admin/
+│   ├── index.html                # Halaman admin
+│   ├── styles.css
+│   └── admin.js
 ├── games/
 │   ├── registry.js               # Daftar game yang tampil di katalog
 │   └── faction-war/
@@ -19,11 +23,14 @@ Project ini memakai pola **modular monolith**: semua game berada dalam satu proj
 │       ├── game.js
 │       ├── README.md             # Dokumentasi teknis Faction War
 │       └── assets/
-└── shared/
-    ├── tiktok/
-    │   ├── event-contract.js     # Format event bersama dan normalisasi payload
-    │   └── tiktok-connector.js   # Subscriber dan koneksi WebSocket bersama
-    └── game-settings-store.js    # Penyimpan SQLite terpisah untuk setiap game
+├── shared/
+│   ├── tiktok/
+│   │   ├── event-contract.js     # Format event bersama dan normalisasi payload
+│   │   └── tiktok-connector.js   # Subscriber dan koneksi WebSocket bersama
+│   ├── game-settings-store.js    # Penyimpan SQLite terpisah untuk setiap game
+│   └── admin-activity-store.js   # Log penggunaan project di SQLite
+└── data/                         # Database admin dibuat saat server mulai
+    └── admin.sqlite              # Log penggunaan untuk halaman admin
 ```
 
 ## Informasi proyek
@@ -42,6 +49,18 @@ npm start
 ```
 
 `npm start` menjalankan server tanpa membuka tab browser otomatis. Buka Game Hub secara manual di `http://127.0.0.1:8050`. Port dapat diganti melalui environment variable `PORT`. Masukkan username akun TikTok yang sedang LIVE dan tunggu sampai status terhubung. Dari layar koneksi, tombol **Pengaturan** membuka Faction War dalam mode konfigurasi saja; akun tidak harus sedang LIVE dan listener maupun sesi pertandingan tidak dijalankan. Halaman game biasa akan kembali ke hub untuk memulai koneksi jika dibuka langsung tanpa sesi listener yang aktif. Jika memang ingin server membuka browser, jalankan dengan `OPEN_BROWSER=true`.
+
+## Admin dan log penggunaan
+
+Salin `.env.example` menjadi `.env`, lalu atur password admin sebelum menjalankan server:
+
+```sh
+cp .env.example .env
+```
+
+Ganti nilai `ADMIN_PASSWORD` dengan password acak yang kuat dan jangan commit file `.env`. Server memuat `.env` saat mulai; environment variable dari proses/PM2 tetap memiliki prioritas. Setelah restart, buka `http://127.0.0.1:8050/admin` (atau `/admin` pada domain production) dan login memakai password tersebut. Tanpa `ADMIN_PASSWORD`, halaman admin menampilkan petunjuk penyiapan dan API log dinonaktifkan.
+
+Halaman ini menampilkan sampai 300 aktivitas terbaru: akun TikTok LIVE berhasil terhubung, terputus, dan game yang dibuka. Log disimpan di `data/admin.sqlite` dan bertahan setelah server restart. Hanya username akun live, waktu, aktivitas, ID game, dan ID sesi yang dicatat; isi komentar, gift, likes, dan data penonton tidak disimpan di log admin. Sesi login admin berlaku 12 jam dan perlu login kembali setelah server restart. Batasi akses domain admin dengan HTTPS di production.
 
 Untuk menjalankan proses dengan PM2, install PM2 pada server lalu jalankan `pm2 start ecosystem.config.cjs`. Konfigurasi tersebut memakai port `8050`, mengikat Node ke `127.0.0.1`, dan tidak membuka browser dari server. Di production, tempatkan reverse proxy/domain di depan port lokal ini.
 

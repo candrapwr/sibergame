@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin — DataSiberLab Game Hub</title>
+  <link rel="stylesheet" href="/admin/styles.css">
+  <script src="/admin/admin.js" defer></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Kembali ke Game Hub">
+        <span class="brand-mark" aria-hidden="true">DS</span>
+        <span><strong>DataSiberLab</strong><small>Game Hub Admin</small></span>
+      </a>
+      <span class="secure-label"><span class="secure-dot"></span>Admin terlindungi</span>
+    </header>
+
+    <section id="login-view" class="login-layout" hidden>
+      <div class="intro-copy">
+        <p class="eyebrow">RUANG ADMIN</p>
+        <h1>Aktivitas<br><span>penggunaan</span></h1>
+        <p class="intro-description">Pantau akun LIVE dan game yang digunakan pada project ini.</p>
+      </div>
+      <form id="login-form" class="login-card">
+        <div class="card-icon" aria-hidden="true">⌑</div>
+        <p class="eyebrow">AUTENTIKASI</p>
+        <h2>Masuk sebagai admin</h2>
+        <p class="muted">Gunakan password admin yang disimpan di environment server.</p>
+        <label for="admin-password">Password admin</label>
+        <div class="password-wrap">
+          <input id="admin-password" name="password" type="password" autocomplete="current-password" required maxlength="512" autofocus>
+          <button id="toggle-password" class="reveal-button" type="button" aria-label="Tampilkan password">Lihat</button>
+        </div>
+        <button class="primary-button" type="submit"><span>Masuk ke dashboard</span><span aria-hidden="true">→</span></button>
+        <p id="login-message" class="message" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="disabled-view" class="notice-card" hidden>
+      <div class="notice-symbol" aria-hidden="true">!</div>
+      <p class="eyebrow">PENYIAPAN DIPERLUKAN</p>
+      <h1>Admin belum diaktifkan</h1>
+      <p>Atur <code>ADMIN_PASSWORD</code> di file <code>.env</code>, lalu restart Game Hub untuk membuka halaman ini.</p>
+      <a href="/" class="text-link">Kembali ke Game Hub <span aria-hidden="true">→</span></a>
+    </section>
+
+    <section id="dashboard-view" class="dashboard" hidden>
+      <div class="dashboard-heading">
+        <div>
+          <p class="eyebrow">RINGKASAN PROJECT</p>
+          <h1>Log penggunaan</h1>
+          <p class="muted">Aktivitas koneksi LIVE dan game yang dibuka.</p>
+        </div>
+        <div class="heading-actions">
+          <button id="refresh-button" class="secondary-button" type="button"><span class="refresh-icon" aria-hidden="true">↻</span> Segarkan</button>
+          <button id="logout-button" class="quiet-button" type="button">Keluar</button>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <article class="summary-card">
+          <span class="summary-icon purple" aria-hidden="true">◎</span>
+          <div><span class="summary-label">Aktivitas tersimpan</span><strong id="activity-count">—</strong></div>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon green" aria-hidden="true">◉</span>
+          <div><span class="summary-label">Akun LIVE tercatat</span><strong id="account-count">—</strong></div>
+        </article>
+        <p class="privacy-note">Log hanya menyimpan username akun LIVE, waktu, jenis aktivitas, game, dan ID sesi. Isi komentar, gift, dan data penonton tidak dicatat.</p>
+      </div>
+
+      <section class="activity-card" aria-labelledby="activity-title">
+        <div class="activity-heading">
+          <div><h2 id="activity-title">Aktivitas terbaru</h2><p id="updated-label" class="muted">Memuat aktivitas…</p></div>
+          <span class="live-indicator"><span></span>LOG TERSIMPAN</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Waktu</th><th>Akun TikTok</th><th>Aktivitas</th><th>Game</th><th>Sesi</th></tr></thead>
+            <tbody id="activity-rows"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state" hidden>
+            <span aria-hidden="true">◷</span>
+            <strong>Belum ada aktivitas</strong>
+            <p>Aktivitas akan tercatat saat akun LIVE terhubung atau game dibuka.</p>
+          </div>
+        </div>
+      </section>
+      <p id="dashboard-message" class="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <footer class="footer"><span>DataSiberLab</span><span>Game Hub · Admin</span></footer>
+  </main>
+</body>
+</html>
