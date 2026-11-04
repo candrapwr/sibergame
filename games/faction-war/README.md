@@ -13,7 +13,10 @@ Faction War adalah game arena dua tim berbasis canvas. Troop muncul dari sisi ti
 | `index.html` | Membuat canvas 1080 × 1920, kontrol bawah, dialog pengaturan, dan memuat GSAP dari CDN. |
 | `styles.css` | Layout fullscreen, kontrol, modal, serta tampilan responsif. |
 | `boot.js` | Memeriksa mode main atau konfigurasi, memuat pengaturan dan katalog gift, lalu memuat `game.js`. |
-| `game.js` | State, canvas, simulasi pertempuran, event TikTok, pengaturan, audio, dan penyimpanan. |
+| `game.js` | State, simulasi pertempuran, event TikTok, penyimpanan, dan orkestrasi modul game. |
+| `renderer.js` | Setup canvas, pemuatan sprite, cache gambar, dan semua fungsi render arena. |
+| `audio.js` | Efek suara, musik latar, serta pemutaran video animasi per ronde. |
+| `settings-panel.js` | Modal pengaturan, tab, mapping gift, filter katalog, dan upload video. |
 | `assets/images/` | Sprite kastil, troop, boss, ikon, dan VFX. |
 | `assets/audio/` | Efek suara troop, suara kemenangan, dan musik latar. Lihat [daftar audio dan sumber lisensinya](assets/audio/README.md). |
 
@@ -112,7 +115,7 @@ Reset game menghentikan koneksi event game, membersihkan troop dan skor, mengoso
 - `finish.wav` dimainkan saat tim menang. Efek suara dan musik latar memiliki toggle serta volume terpisah.
 - `bg1.mp3` diputar berulang selama game aktif.
 - Nama file dan sumber efek suara dicatat di [assets/audio/README.md](assets/audio/README.md). Jika file efek tertentu tidak ada, efek itu dilewati.
-- Sprite dan VFX yang dipakai canvas didefinisikan pada `imageFiles` di `game.js`.
+- Sprite dan VFX yang dipakai canvas didefinisikan pada `imageFiles` di `renderer.js`.
 
 ## Simulasi dan debugging browser
 
