@@ -49,10 +49,10 @@ HP pada tabel sudah termasuk pengali HP global ×3. Damage serangan dan kekuatan
 
 | Unit | HP | Damage | Dorong wilayah | Cooldown serang |
 | --- | ---: | ---: | ---: | ---: |
-| Knight | 240 | 24 | 2 | 2,8 dtk |
-| Mage | 360 | 30 | 2 | 2,8 dtk |
-| Beast | 480 | 38 | 3 | 2,8 dtk |
-| Golem Boss | 1.260 | 58 | 8 | 3,6 dtk |
+| Knight | 240 | 24 | 2 | 1,8 dtk |
+| Mage | 360 | 30 | 2 | 1,8 dtk |
+| Beast | 480 | 38 | 3 | 1,8 dtk |
+| Golem Boss | 1.260 | 58 | 8 | 2,6 dtk |
 
 Troop biasa bergerak dengan kecepatan dasar 108 unit/detik, sedangkan Boss 58. Tiap unit mendapat faktor kecepatan acak 0,92–1,12 saat muncul; jarak ke frontline tidak mengubah kecepatan dasarnya.
 

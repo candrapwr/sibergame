@@ -51,6 +51,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const SAVE_INTERVAL = 3;
   const GAME_FRAME_INTERVAL = 1000 / 30;
   const GIFT_SPAWN_INTERVAL_MS = 220;
+  const TROOP_ATTACK_COOLDOWN = 1.8;
+  const BOSS_ATTACK_COOLDOWN = 2.6;
   const AVATAR_RADIUS = 52;
   const AVATAR_HEAD_GAP = 6;
   const TROOP_WIDTH = 160;
@@ -611,7 +613,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       hp: maxHp,
       attackDamage: isBoss ? 58 : TROOP_ATTACK[safeType],
       pushPower: isBoss ? 8 : TROOP_PUSH[safeType],
-      attackCooldown: isBoss ? 3.6 : 2.8,
+      attackCooldown: isBoss ? BOSS_ATTACK_COOLDOWN : TROOP_ATTACK_COOLDOWN,
       attackTimer: 0,
       attackOffsetTimer: 0,
       pushCount: 0,
@@ -1194,7 +1196,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
         hp,
         attackDamage: Math.max(.1, readNumber(item.attackDamage, isBoss ? 58 : TROOP_ATTACK[type])),
         pushPower: Math.max(.1, readNumber(item.pushPower, isBoss ? 8 : TROOP_PUSH[type])),
-        attackCooldown: Math.max(.1, readNumber(item.attackCooldown, isBoss ? 3.6 : 2.8)),
+        attackCooldown: isBoss ? BOSS_ATTACK_COOLDOWN : TROOP_ATTACK_COOLDOWN,
         attackTimer: Math.max(0, readNumber(item.attackTimer, 0)),
         attackOffsetTimer: 0,
         pushCount: Math.max(0, Math.floor(readNumber(item.pushCount, 0))),
