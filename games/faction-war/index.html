@@ -24,8 +24,8 @@
             <div class="dock-divider" aria-hidden="true"></div>
 
             <div class="match-actions" role="group" aria-label="Mulai atau reset game">
-              <button class="dock-action back" id="back-to-dashboard" type="button" aria-label="Kembali ke dashboard" title="Kembali ke dashboard">
-                <span class="action-icon" aria-hidden="true">⌂</span><span class="action-label">Menu</span>
+              <button class="dock-action back" id="back-to-dashboard" type="button" aria-label="Keluar dari game" title="Keluar dari game">
+                <span class="action-icon" aria-hidden="true">⇥</span><span class="action-label">Keluar</span>
               </button>
               <button class="dock-action start" id="start-game" type="button" aria-label="Mulai game" title="Mulai game">
                 <span class="action-icon" aria-hidden="true">▶</span><span class="action-label">Mulai</span>
@@ -68,7 +68,7 @@
             <div>
               <p class="settings-kicker">GAME SETUP</p>
               <h2 id="settings-title">Pengaturan Game</h2>
-              <p class="settings-description">Atur judul arena dan nama kedua tim.</p>
+              <p class="settings-description" id="settings-description">Pengaturan game tersimpan berdasarkan username akun LIVE.</p>
             </div>
             <button class="settings-close" id="settings-close" type="button" aria-label="Tutup pengaturan">×</button>
           </header>
@@ -182,8 +182,12 @@
           </section>
 
           <footer class="settings-actions">
+            <p class="settings-save-status" id="settings-save-status" role="status" aria-live="polite" hidden>
+              <span class="settings-save-spinner" aria-hidden="true"></span>
+              <span id="settings-save-status-text"></span>
+            </p>
             <button class="settings-cancel" id="settings-cancel" type="button">Batal</button>
-            <button class="settings-save" type="submit">Simpan</button>
+            <button class="settings-save" id="settings-save-button" type="submit">Simpan</button>
           </footer>
         </form>
       </dialog>
@@ -219,11 +223,11 @@
 
       <dialog class="reset-dialog" id="leave-dialog" aria-labelledby="leave-dialog-title">
         <div class="reset-dialog-content">
-          <h2 id="leave-dialog-title">Tutup jendela game?</h2>
+          <h2 id="leave-dialog-title">Keluar dari game?</h2>
           <p>Game akan direset sebelum jendela ditutup. Skor, troop, wilayah, dan progres sesi ini akan dihapus.</p>
           <div class="reset-dialog-actions">
             <button class="reset-cancel" id="cancel-leave" type="button">Tetap di game</button>
-            <button class="reset-confirm" id="confirm-leave" type="button">Tutup &amp; reset</button>
+            <button class="reset-confirm" id="confirm-leave" type="button">Keluar &amp; reset</button>
           </div>
         </div>
       </dialog>

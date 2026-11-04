@@ -7,6 +7,7 @@ const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { WebSocket, WebSocketServer } = require("ws");
+const { getGameSettings, saveGameSettings } = require("./shared/game-settings-store");
 const {
   SiberLiveConnection,
   WebcastEvent,
@@ -86,11 +87,11 @@ function sendJson(response, code, body) {
   response.end(payload);
 }
 
-async function readJson(request) {
+async function readJson(request, maxLength = 4096) {
   let body = "";
   for await (const chunk of request) {
     body += chunk;
-    if (body.length > 4096) throw new Error("Permintaan terlalu besar.");
+    if (body.length > maxLength) throw new Error("Permintaan terlalu besar.");
   }
   try { return body ? JSON.parse(body) : {}; }
   catch { throw new Error("Format permintaan tidak valid."); }
@@ -128,9 +129,57 @@ function normalizeGiftCatalog(gifts) {
   }).filter((gift) => gift.id && gift.name);
 }
 
+async function handleGameSettingsRequest(request, response, gameId) {
+  if (!fs.existsSync(path.join(ROOT, "games", gameId, "index.html"))) {
+    return sendJson(response, 404, { error: "Game tidak ditemukan." });
+  }
+  if (request.method !== "GET" && request.method !== "PUT") {
+    response.writeHead(405, { Allow: "GET, PUT" });
+    response.end("Method Not Allowed");
+    return;
+  }
+  if (status.status !== "connected" || !status.username) {
+    return sendJson(response, 409, { error: "Hubungkan akun TikTok LIVE sebelum memuat atau menyimpan pengaturan." });
+  }
+
+  let username;
+  try { username = cleanUsername(status.username); }
+  catch { return sendJson(response, 409, { error: "Username akun LIVE yang tersambung tidak valid." }); }
+
+  try {
+    if (request.method === "GET") {
+      const record = getGameSettings(ROOT, gameId, username);
+      return sendJson(response, 200, {
+        username,
+        found: Boolean(record),
+        settings: record?.settings || null,
+        updatedAt: record?.updatedAt || null
+      });
+    }
+
+    let body;
+    try { body = await readJson(request, 65536); }
+    catch (error) { return sendJson(response, 400, { error: error.message }); }
+    if (!body || typeof body !== "object" || !body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) {
+      return sendJson(response, 400, { error: "Format pengaturan game tidak valid." });
+    }
+    const serializedSettings = JSON.stringify(body.settings);
+    if (Buffer.byteLength(serializedSettings) > 65536) {
+      return sendJson(response, 413, { error: "Data pengaturan game terlalu besar." });
+    }
+    const updatedAt = saveGameSettings(ROOT, gameId, username, body.settings);
+    return sendJson(response, 200, { saved: true, username, updatedAt });
+  } catch (error) {
+    console.error(`Gagal mengakses pengaturan SQLite untuk game ${gameId}:`, error.message);
+    return sendJson(response, 500, { error: "Pengaturan game gagal dibaca atau disimpan." });
+  }
+}
+
 async function handleRequest(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   if (requestUrl.pathname.startsWith("/api/")) {
+    const gameSettingsMatch = requestUrl.pathname.match(/^\/api\/games\/([a-z0-9]+(?:-[a-z0-9]+)*)\/settings$/);
+    if (gameSettingsMatch) return handleGameSettingsRequest(request, response, gameSettingsMatch[1]);
     if (requestUrl.pathname === "/api/tiktok/status" && request.method === "GET") {
       return sendJson(response, 200, status);
     }

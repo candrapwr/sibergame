@@ -17,7 +17,6 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const TERRITORY_BAR_WIDTH = 790;
   const SAVE_KEY = "game-state:faction-war";
   const LEGACY_SAVE_KEY = "faction-war-save-v1";
-  const SETTINGS_KEY = "faction-war-ui-settings-v1";
   const GIFT_UNIT_TYPES = ["knight", "mage", "beast", "boss"];
   const DEFAULT_SETTINGS = {
     gameTitle: "Faction War",
@@ -44,10 +43,12 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const SAVE_INTERVAL = 3;
   const GAME_FRAME_INTERVAL = 1000 / 30;
   const GIFT_SPAWN_INTERVAL_MS = 220;
-  const AVATAR_RADIUS = 44;
+  const AVATAR_RADIUS = 52;
   const AVATAR_HEAD_GAP = 6;
-  const TROOP_WIDTH = 128;
-  const TROOP_HEIGHT = 142;
+  const TROOP_WIDTH = 160;
+  const TROOP_HEIGHT = 178;
+  const BOSS_WIDTH = 236;
+  const BOSS_HEIGHT = 234;
   const pendingGiftSpawns = [];
   let pendingAnimationFrame = 0;
   let pendingGameTimer = 0;
@@ -80,45 +81,43 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function loadUiSettings() {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || "{}");
-      const coinCosts = {};
-      const giftAssignments = {};
-      GIFT_UNIT_TYPES.forEach((type) => {
-        coinCosts[type] = cleanPositiveCount(saved.coinCosts?.[type], DEFAULT_SETTINGS.coinCosts[type]);
-        const savedAssignment = saved.giftAssignments?.[type];
-        if (savedAssignment && typeof savedAssignment === "object") {
-          giftAssignments[type] = {
-            RED: cleanSetting(savedAssignment.RED, "", 64),
-            BLUE: cleanSetting(savedAssignment.BLUE, "", 64)
-          };
-        } else {
-          // Migrate the former single gift + team selection into its matching side.
-          const legacyTeam = saved.giftTeams?.[type] === "BLUE" ? "BLUE" : "RED";
-          giftAssignments[type] = { RED: "", BLUE: "" };
-          giftAssignments[type][legacyTeam] = cleanSetting(savedAssignment, "", 64);
-        }
-      });
-      return {
-        gameTitle: cleanSetting(saved.gameTitle, DEFAULT_SETTINGS.gameTitle, 32),
-        redTeam: cleanSetting(saved.redTeam, DEFAULT_SETTINGS.redTeam, 18),
-        blueTeam: cleanSetting(saved.blueTeam, DEFAULT_SETTINGS.blueTeam, 18),
-        showAvatar: saved.showAvatar !== false,
-        showUsername: saved.showUsername !== false,
-        showGiftLegend: saved.showGiftLegend !== false,
-        soundEnabled: saved.soundEnabled !== false,
-        soundVolume: cleanSoundVolume(saved.soundVolume, DEFAULT_SETTINGS.soundVolume),
-        bgMusicEnabled: saved.bgMusicEnabled !== false,
-        bgMusicVolume: cleanSoundVolume(saved.bgMusicVolume, DEFAULT_SETTINGS.bgMusicVolume),
-        likeTroopsEnabled: saved.likeTroopsEnabled !== false,
-        likesPerTroop: cleanPositiveCount(saved.likesPerTroop, DEFAULT_SETTINGS.likesPerTroop),
-        giftMode: saved.giftMode === "gift" ? "gift" : "coin",
-        coinCosts,
-        giftAssignments
-      };
-    } catch (error) {
-      return { ...DEFAULT_SETTINGS };
-    }
+    const saved = window.factionWarSettings && typeof window.factionWarSettings === "object"
+      ? window.factionWarSettings
+      : {};
+    const coinCosts = {};
+    const giftAssignments = {};
+    GIFT_UNIT_TYPES.forEach((type) => {
+      coinCosts[type] = cleanPositiveCount(saved.coinCosts?.[type], DEFAULT_SETTINGS.coinCosts[type]);
+      const savedAssignment = saved.giftAssignments?.[type];
+      if (savedAssignment && typeof savedAssignment === "object") {
+        giftAssignments[type] = {
+          RED: cleanSetting(savedAssignment.RED, "", 64),
+          BLUE: cleanSetting(savedAssignment.BLUE, "", 64)
+        };
+      } else {
+        // Migrate the former single gift + team selection into its matching side.
+        const legacyTeam = saved.giftTeams?.[type] === "BLUE" ? "BLUE" : "RED";
+        giftAssignments[type] = { RED: "", BLUE: "" };
+        giftAssignments[type][legacyTeam] = cleanSetting(savedAssignment, "", 64);
+      }
+    });
+    return {
+      gameTitle: cleanSetting(saved.gameTitle, DEFAULT_SETTINGS.gameTitle, 32),
+      redTeam: cleanSetting(saved.redTeam, DEFAULT_SETTINGS.redTeam, 18),
+      blueTeam: cleanSetting(saved.blueTeam, DEFAULT_SETTINGS.blueTeam, 18),
+      showAvatar: saved.showAvatar !== false,
+      showUsername: saved.showUsername !== false,
+      showGiftLegend: saved.showGiftLegend !== false,
+      soundEnabled: saved.soundEnabled !== false,
+      soundVolume: cleanSoundVolume(saved.soundVolume, DEFAULT_SETTINGS.soundVolume),
+      bgMusicEnabled: saved.bgMusicEnabled !== false,
+      bgMusicVolume: cleanSoundVolume(saved.bgMusicVolume, DEFAULT_SETTINGS.bgMusicVolume),
+      likeTroopsEnabled: saved.likeTroopsEnabled !== false,
+      likesPerTroop: cleanPositiveCount(saved.likesPerTroop, DEFAULT_SETTINGS.likesPerTroop),
+      giftMode: saved.giftMode === "gift" ? "gift" : "coin",
+      coinCosts,
+      giftAssignments
+    };
   }
 
   const uiSettings = loadUiSettings();
@@ -499,10 +498,10 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function drawGiftTeamLegend(team) {
-    const troopIconSize = 112;
-    const giftIconSize = 64;
-    const iconOverlap = 30;
-    const rowGap = 12;
+    const troopIconSize = 128;
+    const giftIconSize = 72;
+    const iconOverlap = 34;
+    const rowGap = 14;
     const pairWidth = troopIconSize + giftIconSize - iconOverlap;
     const edgeOffset = 46;
     const pairX = team === "RED" ? -edgeOffset : W - pairWidth + edgeOffset;
@@ -787,21 +786,20 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
 
   function drawHeader() {
     const gameTitle = uiSettings.gameTitle.toUpperCase();
-    outlinedText(gameTitle, MID, 111, fitTextSize(gameTitle, 90, 940), "#dff7ff", { stroke: "#11152d", lineWidth: 17, shadow: "rgba(0,0,0,.7)" });
-    outlinedText("TERRITORY CLASH", MID, 178, 22, "#ffe0a7", { stroke: "#32223c", lineWidth: 6, weight: 900 });
+    outlinedText(gameTitle, MID, 76, fitTextSize(gameTitle, 66, 940), "#dff7ff", { stroke: "#11152d", lineWidth: 13, shadow: "rgba(0,0,0,.7)" });
 
     // Territory bar: red fills from the left, blue from the right.
     const barX = TERRITORY_BAR_X;
-    const barY = 226;
+    const barY = 122;
     const barW = TERRITORY_BAR_WIDTH;
-    const barH = 76;
-    roundRect(barX - 13, barY - 12, barW + 26, barH + 24, 28, "#171d38", "#6374a3", 5);
-    roundRect(barX, barY, barW, barH, 18, "#10162c", "rgba(255,255,255,.16)", 2);
+    const barH = 64;
+    roundRect(barX - 11, barY - 10, barW + 22, barH + 20, 24, "#171d38", "#6374a3", 5);
+    roundRect(barX, barY, barW, barH, 16, "#10162c", "rgba(255,255,255,.16)", 2);
     const redW = Math.max(8, barW * state.territoryRatio.red);
     const blueW = Math.max(8, barW - redW);
     ctx.save();
     ctx.beginPath();
-    roundRect(barX, barY, barW, barH, 18, null, null);
+    roundRect(barX, barY, barW, barH, 16, null, null);
     ctx.clip();
     const redFill = ctx.createLinearGradient(barX, 0, barX + redW, 0);
     redFill.addColorStop(0, "#ff704d"); redFill.addColorStop(1, "#d82952");
@@ -812,30 +810,22 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     ctx.restore();
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
-    outlinedText("VS", MID, barY + barH / 2 + 1, 46, "#fff4e8", { stroke: "#181b35", lineWidth: 11, shadow: "rgba(0,0,0,.65)" });
+    outlinedText("VS", MID, barY + barH / 2 + 1, 40, "#fff4e8", { stroke: "#181b35", lineWidth: 10, shadow: "rgba(0,0,0,.65)" });
     ctx.restore();
-    outlinedText(`${Math.round(territoryPercent("RED"))}%`, barX + 70, barY + barH / 2, 23, "#fff4e8", { align: "left", lineWidth: 5, shadow: "none" });
-    outlinedText(`${Math.round(territoryPercent("BLUE"))}%`, barX + barW - 70, barY + barH / 2, 23, "#f1fcff", { align: "right", lineWidth: 5, shadow: "none" });
-    outlinedText("TERRITORY", MID, 336, 30, "#fff6e8", { stroke: "#29243a", lineWidth: 8, shadow: "rgba(0,0,0,.4)" });
-    roundRect(414, 351, 252, 72, 22, "rgba(17, 20, 39, .78)", "rgba(255,255,255,.22)", 2);
-    image("trophy", 428, 365, 40, 42, .94);
-    outlinedText("MATCH SCORE", MID + 16, 366, 12, "#dbe6ff", { stroke: "#17192d", lineWidth: 3, weight: 900, shadow: "none" });
-    outlinedText(`${state.scoreRed}  -  ${state.scoreBlue}`, MID + 16, 400, 26, "#fff1b2", { stroke: "#181a31", lineWidth: 6, shadow: "none" });
+    outlinedText(`${Math.round(territoryPercent("RED"))}%`, barX + 72, barY + barH / 2, 28, "#fff4e8", { align: "left", lineWidth: 6, shadow: "none" });
+    outlinedText(`${Math.round(territoryPercent("BLUE"))}%`, barX + barW - 72, barY + barH / 2, 28, "#f1fcff", { align: "right", lineWidth: 6, shadow: "none" });
 
-    image("baseRed", 0, 411, 400, 378, .98);
-    image("baseBlue", 680, 408, 400, 389, .98);
+    image("baseRed", -10, 300, 470, 444, .98);
+    image("baseBlue", 620, 297, 470, 457, .98);
     // Team ribbons sit above the castles so their artwork stays visible.
-    roundRect(22, 343, 330, 61, 15, "rgba(193, 38, 61, .94)", "#211a32", 5);
-    roundRect(728, 343, 330, 61, 15, "rgba(29, 111, 200, .96)", "#211a32", 5);
-    image("teamButtonRed", 37, 346, 54, 54, .95);
-    image("teamButtonBlue", 989, 346, 54, 54, .95);
+    roundRect(22, 230, 330, 61, 15, "rgba(193, 38, 61, .94)", "#211a32", 5);
+    roundRect(728, 230, 330, 61, 15, "rgba(29, 111, 200, .96)", "#211a32", 5);
+    image("teamButtonRed", 37, 233, 54, 54, .95);
+    image("teamButtonBlue", 989, 233, 54, 54, .95);
     const redName = uiSettings.redTeam.toUpperCase();
     const blueName = uiSettings.blueTeam.toUpperCase();
-    outlinedText(redName, 208, 374, fitTextSize(redName, 35, 260), "#fff0e8", { stroke: "#301a2c", lineWidth: 8 });
-    outlinedText(blueName, 872, 374, fitTextSize(blueName, 35, 260), "#e9fbff", { stroke: "#192648", lineWidth: 8 });
-
-    outlinedText(`${state.troops.filter((troop) => troop.team === "RED").length} UNITS`, 74, 677, 15, "#ffd0ba", { align: "left", stroke: "#301a32", lineWidth: 4, weight: 900, shadow: "none" });
-    outlinedText(`${state.troops.filter((troop) => troop.team === "BLUE").length} UNITS`, 1006, 677, 15, "#ccf5ff", { align: "right", stroke: "#18294e", lineWidth: 4, weight: 900, shadow: "none" });
+    outlinedText(redName, 208, 261, fitTextSize(redName, 39, 260), "#fff0e8", { stroke: "#301a2c", lineWidth: 9 });
+    outlinedText(blueName, 872, 261, fitTextSize(blueName, 39, 260), "#e9fbff", { stroke: "#192648", lineWidth: 9 });
   }
 
   function drawBattlefieldTrim() {
@@ -869,27 +859,27 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     ctx.shadowColor = TEAM[troop.team].light;
     ctx.shadowBlur = 17;
     ctx.strokeStyle = TEAM[troop.team].light;
-    ctx.lineWidth = troop.isBoss ? 10 : 7;
+    ctx.lineWidth = troop.isBoss ? 12 : 9;
 
     if (troop.type === "knight" && !troop.isBoss) {
       const start = direction > 0 ? -1.08 : Math.PI + 1.08;
       const end = direction > 0 ? .82 : Math.PI - .82;
       ctx.beginPath();
-      ctx.arc(direction * 19, -13, 48, start, end, direction < 0);
+      ctx.arc(direction * 24, -16, 60, start, end, direction < 0);
       ctx.stroke();
       ctx.shadowBlur = 3;
       ctx.strokeStyle = "rgba(255,255,255,.92)";
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(direction * 19, -13, 48, start + direction * .08, end - direction * .08, direction < 0);
+      ctx.arc(direction * 24, -16, 60, start + direction * .08, end - direction * .08, direction < 0);
       ctx.stroke();
     } else {
       // Beasts and golems get claw/fist streaks instead of a sword arc.
       for (let index = 0; index < 3; index += 1) {
         const offset = (index - 1) * 15;
         ctx.beginPath();
-        ctx.moveTo(direction * 17, -10 + offset);
-        ctx.lineTo(direction * (56 + index * 5), -24 + offset);
+        ctx.moveTo(direction * 22, -12 + offset);
+        ctx.lineTo(direction * (70 + index * 6), -29 + offset);
         ctx.stroke();
       }
     }
@@ -908,8 +898,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
         ? (troop.frontPose > .5 ? "bossRedFront" : "bossRedSide")
         : (troop.frontPose > .5 ? "bossBlueFront" : "bossBlueSide"))
       : `${team.imagePrefix}${troop.type[0].toUpperCase()}${troop.type.slice(1)}`;
-    const width = troop.isBoss ? 198 : TROOP_WIDTH;
-    const height = troop.isBoss ? 196 : TROOP_HEIGHT;
+    const width = troop.isBoss ? BOSS_WIDTH : TROOP_WIDTH;
+    const height = troop.isBoss ? BOSS_HEIGHT : TROOP_HEIGHT;
 
     // Spawn flash and shadow establish the unit on the floor.
     ctx.save();
@@ -917,7 +907,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     ctx.fillStyle = team.color;
     ctx.shadowColor = team.color;
     ctx.shadowBlur = 24;
-    ctx.beginPath(); ctx.ellipse(x, troop.y + height * .36, (troop.isBoss ? 74 : 52) / layoutScaleX, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, troop.y + height * .36, (troop.isBoss ? 88 : 64) / layoutScaleX, 16, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 
     ctx.save();
@@ -934,8 +924,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     const drawn = sprite?.complete && sprite.naturalWidth;
     if (!drawn) {
       ctx.fillStyle = team.color;
-      ctx.beginPath(); ctx.arc(0, 0, troop.isBoss ? 60 : 44, 0, Math.PI * 2); ctx.fill();
-      ctx.font = "1000 28px Trebuchet MS, Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.beginPath(); ctx.arc(0, 0, troop.isBoss ? 68 : 52, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "1000 32px Trebuchet MS, Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.lineWidth = 6; ctx.strokeStyle = team.dark; ctx.strokeText(troop.isBoss ? "BOSS" : TROOP_NAMES[troop.type][0], 0, 0);
       ctx.fillStyle = "#fff"; ctx.fillText(troop.isBoss ? "BOSS" : TROOP_NAMES[troop.type][0], 0, 0);
     } else {
@@ -945,9 +935,9 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     drawAttackMotion(troop, x, y);
 
     if (!troop.dead && (troop.status === "frontline" || troop.hp < troop.maxHp)) {
-      const barWidth = troop.isBoss ? 104 : 66;
-      const barHeight = troop.isBoss ? 10 : 7;
-      const barY = y + height / 2 - 20;
+      const barWidth = troop.isBoss ? 132 : 86;
+      const barHeight = troop.isBoss ? 14 : 10;
+      const barY = y + height / 2 - 24;
       roundRectFixed(x - barWidth / 2, barY, barWidth, barHeight, barHeight / 2, "rgba(15,17,30,.86)", "rgba(255,255,255,.48)", 1);
       const healthColor = troop.hp / troop.maxHp < .35 ? "#ff514f" : (troop.team === "RED" ? "#ff9b61" : "#61dfff");
       roundRectFixed(x - barWidth / 2 + 2, barY + 2, (barWidth - 4) * clamp(troop.hp / troop.maxHp, 0, 1), barHeight - 4, 4, healthColor, null);
@@ -1024,22 +1014,22 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
       ? `${usernameCharacters.slice(0, 15).join("")}...`
       : username;
 
-    const labelY = y - (troop.isBoss ? 160 : 112);
+    const labelY = y - (troop.isBoss ? 180 : 130);
     if (uiSettings.showUsername) {
       ctx.save();
-      ctx.font = "800 26px Trebuchet MS, Arial, sans-serif";
-      const labelWidth = Math.min(560, Math.max(230, ctx.measureText(safeUsername).width + 40));
+      ctx.font = "800 28px Trebuchet MS, Arial, sans-serif";
+      const labelWidth = Math.min(560, Math.max(250, ctx.measureText(safeUsername).width + 40));
       ctx.translate(x, labelY);
       ctx.scale(1 / layoutScaleX, 1);
-      roundRect(-labelWidth / 2, 0, labelWidth, 56, 25, "rgba(16, 18, 34, .9)", team.color, 3, 1);
-      ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = "800 26px Trebuchet MS, Arial"; ctx.fillStyle = "#fff";
+      roundRect(-labelWidth / 2, 0, labelWidth, 58, 27, "rgba(16, 18, 34, .9)", team.color, 3, 1);
+      ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = "800 28px Trebuchet MS, Arial"; ctx.fillStyle = "#fff";
       ctx.fillText(safeUsername, -labelWidth / 2 + 20, 29, labelWidth - 40);
       ctx.restore();
     }
     if (uiSettings.showAvatar) {
       const avatarCenterY = uiSettings.showUsername
         ? labelY - AVATAR_RADIUS - 5
-        : y - ((troop.isBoss ? 196 : TROOP_HEIGHT) * troop.scaleY * troop.popScale) / 2 - AVATAR_RADIUS - AVATAR_HEAD_GAP;
+        : y - ((troop.isBoss ? BOSS_HEIGHT : TROOP_HEIGHT) * troop.scaleY * troop.popScale) / 2 - AVATAR_RADIUS - AVATAR_HEAD_GAP;
       drawTroopAvatar(troop, x, avatarCenterY, username);
     }
   }
@@ -2158,6 +2148,47 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   let selectedSpawnTeam = "RED";
   const teamButtons = [...document.querySelectorAll("[data-select-team]")];
   const troopButtons = [...document.querySelectorAll("[data-spawn]")];
+  const bottomPanel = document.querySelector(".bottom-base");
+  let bottomPanelHideTimer = 0;
+  let bottomPanelInput = "pointer";
+
+  function showBottomPanel() {
+    if (bottomPanelHideTimer) window.clearTimeout(bottomPanelHideTimer);
+    bottomPanelHideTimer = 0;
+    document.body.classList.add("controls-visible");
+  }
+
+  function scheduleBottomPanelHide() {
+    if (bottomPanelHideTimer) window.clearTimeout(bottomPanelHideTimer);
+    bottomPanelHideTimer = window.setTimeout(() => {
+      bottomPanelHideTimer = 0;
+      if (bottomPanel.matches(":hover")) return;
+      if (bottomPanelInput === "keyboard" && bottomPanel.contains(document.activeElement)) return;
+      if (bottomPanel.contains(document.activeElement)) document.activeElement.blur();
+      document.body.classList.remove("controls-visible");
+    }, 650);
+  }
+
+  if (bottomPanel && !window.matchMedia("(hover: none)").matches) {
+    window.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "mouse") return;
+      bottomPanelInput = "pointer";
+      const bounds = bottomPanel.getBoundingClientRect();
+      const nearPanel = event.clientX >= bounds.left - 100 && event.clientX <= bounds.right + 100;
+      if (nearPanel && event.clientY >= window.innerHeight - 140) showBottomPanel();
+      else if (document.body.classList.contains("controls-visible")) scheduleBottomPanelHide();
+    }, { passive: true });
+    bottomPanel.addEventListener("pointerenter", showBottomPanel);
+    bottomPanel.addEventListener("pointerleave", scheduleBottomPanelHide);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Tab" || event.key.startsWith("Arrow")) bottomPanelInput = "keyboard";
+    });
+    bottomPanel.addEventListener("focusin", showBottomPanel);
+    bottomPanel.addEventListener("focusout", (event) => {
+      if (!bottomPanel.contains(event.relatedTarget)) scheduleBottomPanelHide();
+    });
+  }
+
   const settingsDialog = document.getElementById("settings-dialog");
   const settingsForm = document.getElementById("settings-form");
   const settingsTabs = [...document.querySelectorAll("[data-settings-tab]")];
@@ -2179,6 +2210,10 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const likeTroopsEnabledInput = document.getElementById("setting-like-troops-enabled");
   const likesPerTroopInput = document.getElementById("setting-likes-per-troop");
   const giftCatalogStatusMessage = document.getElementById("gift-catalog-status");
+  const settingsDescription = document.getElementById("settings-description");
+  const settingsSaveStatus = document.getElementById("settings-save-status");
+  const settingsSaveStatusText = document.getElementById("settings-save-status-text");
+  const settingsSaveButton = document.getElementById("settings-save-button");
   const giftPickerDialog = document.getElementById("gift-picker-dialog");
   const giftPickerTitle = document.getElementById("gift-picker-title");
   const giftPickerSearch = document.getElementById("gift-picker-search");
@@ -2192,6 +2227,32 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const giftPickerClear = document.getElementById("gift-picker-clear");
   let activeGiftAssignmentKey = "";
   let giftPickerVisibleLimit = 40;
+  let settingsSaving = false;
+  let settingsControlsBeforeSave = [];
+  const setSettingsSaveStatus = (state, message) => {
+    settingsSaveStatus.dataset.state = state;
+    settingsSaveStatusText.textContent = message;
+    settingsSaveStatus.hidden = false;
+  };
+  const clearSettingsSaveStatus = () => {
+    settingsSaveStatus.hidden = true;
+    settingsSaveStatus.removeAttribute("data-state");
+    settingsSaveStatusText.textContent = "";
+  };
+  const setSettingsSaving = (saving) => {
+    settingsSaving = saving;
+    if (saving) {
+      settingsControlsBeforeSave = [...settingsForm.querySelectorAll("button, input")]
+        .map((control) => [control, control.disabled]);
+      settingsControlsBeforeSave.forEach(([control]) => { control.disabled = true; });
+      settingsSaveButton.textContent = "Menyimpan…";
+      setSettingsSaveStatus("saving", "Menyimpan pengaturan ke SQLite…");
+      return;
+    }
+    settingsControlsBeforeSave.forEach(([control, wasDisabled]) => { control.disabled = wasDisabled; });
+    settingsControlsBeforeSave = [];
+    settingsSaveButton.textContent = "Simpan";
+  };
   const syncTeamNameControls = () => {
     teamButtons.forEach((button) => {
       const name = teamDisplayName(button.dataset.selectTeam);
@@ -2456,6 +2517,14 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   };
 
   document.getElementById("settings-button").addEventListener("click", () => {
+    clearSettingsSaveStatus();
+    const accountUsername = String(window.factionWarSettingsUsername || "").replace(/^@+/, "");
+    settingsDescription.textContent = accountUsername
+      ? `Pengaturan ini disimpan khusus untuk akun LIVE @${accountUsername}.`
+      : "Pengaturan disimpan berdasarkan username akun LIVE yang tersambung.";
+    if (window.factionWarSettingsLoadError) {
+      setSettingsSaveStatus("error", `Gagal memuat setting: ${window.factionWarSettingsLoadError}`);
+    }
     gameTitleInput.value = uiSettings.gameTitle;
     redTeamInput.value = uiSettings.redTeam;
     blueTeamInput.value = uiSettings.blueTeam;
@@ -2478,12 +2547,16 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   });
   document.getElementById("settings-close").addEventListener("click", () => settingsDialog.close());
   document.getElementById("settings-cancel").addEventListener("click", () => settingsDialog.close());
-  settingsDialog.addEventListener("click", (event) => {
-    if (event.target === settingsDialog) settingsDialog.close();
+  settingsDialog.addEventListener("cancel", (event) => {
+    if (settingsSaving) event.preventDefault();
   });
-  settingsForm.addEventListener("submit", (event) => {
+  settingsDialog.addEventListener("click", (event) => {
+    if (event.target === settingsDialog && !settingsSaving) settingsDialog.close();
+  });
+  settingsForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    Object.assign(uiSettings, {
+    if (settingsSaving) return;
+    const nextSettings = {
       gameTitle: cleanSetting(gameTitleInput.value, DEFAULT_SETTINGS.gameTitle, 32),
       redTeam: cleanSetting(redTeamInput.value, DEFAULT_SETTINGS.redTeam, 18),
       blueTeam: cleanSetting(blueTeamInput.value, DEFAULT_SETTINGS.blueTeam, 18),
@@ -2508,15 +2581,33 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
           cleanSetting(giftAssignmentInput(`${type}:${team}`).value, "", 64)
         ])
       )]))
-    });
-    applySoundSettings();
-    applyBackgroundMusicSettings();
-    syncTeamNameControls();
-    syncGiftMappingTeamTitles();
-    try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(uiSettings)); }
-    catch (error) { /* Keep the changes active for this page session. */ }
-    settingsDialog.close();
-    requestRender();
+    };
+
+    setSettingsSaving(true);
+    try {
+      const response = await fetch("/api/games/faction-war/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: nextSettings })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Pengaturan gagal disimpan.");
+
+      Object.assign(uiSettings, nextSettings);
+      window.factionWarSettings = nextSettings;
+      window.factionWarSettingsUsername = result.username || window.factionWarSettingsUsername || "";
+      window.factionWarSettingsLoadError = "";
+      applySoundSettings();
+      applyBackgroundMusicSettings();
+      syncTeamNameControls();
+      syncGiftMappingTeamTitles();
+      requestRender();
+      settingsDialog.close();
+    } catch (error) {
+      setSettingsSaveStatus("error", error.message || "Pengaturan gagal disimpan. Coba lagi.");
+    } finally {
+      setSettingsSaving(false);
+    }
   });
 
   const selectSpawnTeam = (team) => {

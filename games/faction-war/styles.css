@@ -51,13 +51,17 @@ button { font: inherit; }
 .bottom-base {
   position: absolute;
   z-index: 10;
+  --dock-scale: .85;
   bottom: max(10px, env(safe-area-inset-bottom));
   left: 50%;
   width: max-content;
   max-width: calc(100vw - 16px);
-  padding: 3px 5px;
-  transform: translateX(-50%) scale(.8);
+  padding: 5px 8px;
+  transform: translateX(-50%) translateY(calc(100% + 14px)) scale(var(--dock-scale));
   transform-origin: bottom center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .24s ease;
   border: 1px solid rgba(255,255,255,.15);
   border-radius: 0;
   background: rgba(8, 11, 24, .9);
@@ -65,38 +69,44 @@ button { font: inherit; }
   backdrop-filter: blur(14px);
 }
 
+body.controls-visible .bottom-base {
+  transform: translateX(-50%) translateY(0) scale(var(--dock-scale));
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .bottom-base-inner {
   display: flex;
   width: max-content;
   max-width: 100%;
-  min-height: 40px;
+  min-height: 48px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0 auto;
 }
 
 .team-picker {
   display: flex;
   flex: 0 0 auto;
-  gap: 1px;
-  padding: 1px;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 0;
   background: rgba(255,255,255,.055);
 }
 
 .team-select {
-  min-width: 52px;
-  max-width: 80px;
-  min-height: 26px;
-  padding: 3px 5px;
+  min-width: 62px;
+  max-width: 90px;
+  min-height: 32px;
+  padding: 4px 8px;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 0;
   background: transparent;
   color: #abb3cc;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 1000;
   text-transform: uppercase;
   text-overflow: ellipsis;
@@ -116,21 +126,21 @@ button { font: inherit; }
   background: rgba(255,255,255,.12);
 }
 
-.match-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+.match-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 
 .dock-action {
   display: flex;
-  min-width: 58px;
-  min-height: 38px;
+  min-width: 70px;
+  min-height: 46px;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 4px 7px;
+  gap: 7px;
+  padding: 6px 9px;
   border: 1px solid rgba(255,255,255,.14);
   border-radius: 0;
   background: rgba(255,255,255,.07);
   color: #eef1ff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   cursor: pointer;
   transition: transform .15s ease, background .15s ease, border-color .15s ease;
@@ -142,15 +152,15 @@ button { font: inherit; }
 .dock-action.start:hover:not(:disabled) { background: linear-gradient(145deg, rgba(43,158,106,.9), rgba(27,107,102,.95)); }
 .dock-action.reset { color: #d7dced; }
 .dock-action:disabled { cursor: default; opacity: .72; }
-.action-icon { font-size: 16px; line-height: 1; }
+.action-icon { font-size: 20px; line-height: 1; }
 .action-label { white-space: nowrap; }
 
-.troop-picker { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.troop-picker { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 .troop-icon-button {
   display: flex;
-  width: 42px;
-  min-height: 40px;
+  width: 50px;
+  min-height: 48px;
   flex-direction: row;
   align-items: center;
   justify-content: center;
@@ -167,8 +177,8 @@ button { font: inherit; }
 .troop-icon-button:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.1); }
 .troop-icon-button:active { transform: translateY(-1px) scale(.96); }
 .troop-icon-button:disabled { transform: none; border-color: rgba(255,255,255,.07); background: rgba(255,255,255,.025); filter: grayscale(.55); opacity: .48; cursor: default; }
-.troop-icon-button img { display: block; width: 31px; height: 34px; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0,0,0,.4)); pointer-events: none; }
-.troop-icon-button.boss img { width: 37px; }
+.troop-icon-button img { display: block; width: 38px; height: 42px; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0,0,0,.4)); pointer-events: none; }
+.troop-icon-button.boss img { width: 44px; }
 .troop-icon-button span { display: none; }
 
 button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
@@ -288,6 +298,15 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .gift-picker-footer button { min-height: 30px; padding: 5px 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 0; color: #e4e9fa; font-size: 9px; font-weight: 800; cursor: pointer; }
 .settings-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: auto; padding-top: 16px; }
 .settings-actions button { min-height: 34px; padding: 7px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 0; color: #f2f4ff; font-size: 11px; font-weight: 900; cursor: pointer; }
+.settings-actions button:disabled { cursor: wait; opacity: .58; }
+.settings-save-status { display: flex; min-width: 0; align-items: center; gap: 7px; margin: 0 auto 0 0; color: #c6d3f0; font-size: 10px; }
+.settings-save-status[hidden] { display: none; }
+.settings-save-status[data-state="error"] { color: #ffaaa7; }
+.settings-save-status[data-state="saved"] { color: #a8f0c5; }
+.settings-save-spinner { width: 13px; height: 13px; flex: 0 0 13px; border: 2px solid rgba(193,211,242,.25); border-top-color: #9fd4ff; border-radius: 50%; }
+.settings-save-status[data-state="saving"] .settings-save-spinner { animation: settings-save-spin .7s linear infinite; }
+.settings-save-status:not([data-state="saving"]) .settings-save-spinner { display: none; }
+@keyframes settings-save-spin { to { transform: rotate(360deg); } }
 .settings-cancel { background: rgba(255,255,255,.06); }
 .settings-save { border-color: rgba(125,224,171,.4) !important; background: linear-gradient(135deg, #278d65, #236678); }
 .reset-dialog { width: min(390px, calc(100vw - 28px)); max-width: none; margin: auto; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 0; background: #1b1e30; color: #f6f7ff; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
@@ -311,7 +330,7 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 }
 
 @media (max-width: 600px) {
-  .bottom-base { bottom: max(8px, env(safe-area-inset-bottom)); padding: 2px 4px; border-radius: 0; }
+  .bottom-base { --dock-scale: .8; bottom: max(8px, env(safe-area-inset-bottom)); padding: 2px 4px; border-radius: 0; }
   .bottom-base-inner { gap: 4px; min-height: 34px; }
   .team-picker { gap: 1px; padding: 1px; border-radius: 0; }
   .team-select { min-width: 32px; max-width: 58px; min-height: 26px; padding: 2px 3px; border-radius: 0; font-size: 7px; }
@@ -325,6 +344,8 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   .troop-icon-button img { width: 27px; height: 30px; }
   .troop-icon-button.boss img { width: 31px; }
   .settings-dialog { min-height: min(470px, calc(100dvh - 28px)); }
+  .settings-actions { flex-wrap: wrap; }
+  .settings-save-status { flex-basis: 100%; }
   .settings-form { min-height: inherit; padding: 14px; }
   .settings-tabs { margin-right: -14px; margin-left: -14px; }
   .settings-team-fields { grid-template-columns: 1fr; gap: 9px; }
@@ -341,7 +362,7 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 }
 
 @media (max-width: 360px) {
-  .bottom-base { max-width: calc(100vw - 8px); padding-right: 2px; padding-left: 2px; }
+  .bottom-base { --dock-scale: .72; max-width: calc(100vw - 8px); padding-right: 2px; padding-left: 2px; }
   .bottom-base-inner { gap: 3px; }
   .team-select { min-width: 30px; }
   .dock-action { min-width: 29px; }
@@ -350,6 +371,14 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 @media (max-aspect-ratio: 9/16) {
   #game-canvas { object-fit: cover; }
+}
+
+@media (hover: none) {
+  .bottom-base {
+    transform: translateX(-50%) translateY(0) scale(var(--dock-scale));
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

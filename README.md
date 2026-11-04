@@ -20,9 +20,10 @@ Project ini memakai pola **modular monolith**: semua game berada dalam satu proj
 │       ├── README.md             # Dokumentasi teknis Faction War
 │       └── assets/
 └── shared/
-    └── tiktok/
-        ├── event-contract.js     # Format event bersama dan normalisasi payload
-        └── tiktok-connector.js   # Subscriber dan koneksi WebSocket bersama
+    ├── tiktok/
+    │   ├── event-contract.js     # Format event bersama dan normalisasi payload
+    │   └── tiktok-connector.js   # Subscriber dan koneksi WebSocket bersama
+    └── game-settings-store.js    # Penyimpan SQLite terpisah untuk setiap game
 ```
 
 ## Informasi proyek
@@ -33,7 +34,7 @@ Project ini memakai pola **modular monolith**: semua game berada dalam satu proj
 
 ## Menjalankan
 
-Game Hub menjalankan server aplikasi dan Siber Live Listener dalam satu proses. Node.js 20 atau lebih baru diperlukan.
+Game Hub menjalankan server aplikasi dan Siber Live Listener dalam satu proses. Node.js 22 atau lebih baru diperlukan.
 
 ```sh
 npm install
@@ -51,7 +52,7 @@ Untuk menjalankan proses dengan PM2, install PM2 pada server lalu jalankan `pm2 
 3. Buat `boot.js` yang memanggil `requireConnectedTikTok()` dari `shared/tiktok/game-entry.js` sebelum mengimpor logika game.
 4. Import konektor bersama dari game: `../../shared/tiktok/tiktok-connector.js`.
 5. Subscribe ke event dan terjemahkan ke aksi khusus game itu sendiri. Aturan satu game tidak ditaruh di konektor bersama.
-6. Simpan state runtime dengan key `game-state:<nama-game>` agar state semua game dibersihkan otomatis saat sesi TikTok baru berhasil terhubung. Key pengaturan sebaiknya tetap terpisah agar tidak ikut terhapus.
+6. Simpan state runtime dengan key `game-state:<nama-game>` agar state semua game dibersihkan otomatis saat sesi TikTok baru berhasil terhubung. Pengaturan game disimpan server-side melalui `/api/games/<nama-game>/settings` ke database `games/<nama-game>/data/settings.sqlite`, terpisah berdasarkan username LIVE.
 7. Buat `README.md` di folder game tersebut untuk menjelaskan mekanik, alur event, pengaturan, state, dan asset khusus game. Dokumentasi global tetap untuk hub dan sistem bersama.
 
 ## Dokumentasi game
@@ -77,3 +78,7 @@ Event yang dikenali: `comment`, `gift`, `like`, `follow`, `share`, dan `join`. C
 Status koneksi disimpan oleh server selama proses server berjalan, jadi berpindah halaman dari hub ke game tidak memutus listener. Endpoint event `/tiktok` dibagi oleh semua game.
 
 Konektor hanya menangani transport dan format event umum. Setiap game menentukan sendiri pemetaan event ke gameplay; lihat README di folder game untuk aturan khusus tersebut.
+
+## Penyimpanan pengaturan
+
+Setiap game menyimpan pengaturan di file SQLite miliknya sendiri pada `games/<nama-game>/data/settings.sqlite`. Baris pengaturan dibedakan berdasarkan username akun LIVE yang sedang tersambung. File database dan file journal SQLite diabaikan Git. State runtime pertandingan tetap menggunakan `localStorage` per browser; pengaturan tidak.

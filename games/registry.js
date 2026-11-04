@@ -6,7 +6,13 @@ const games = [
     icon: "⚔️",
     status: "Siap dimainkan",
     entry: "games/faction-war/index.html",
-    accent: "rgba(255, 90, 82, .22)"
+    accent: "rgba(255, 90, 82, .22)",
+    cover: {
+      redBase: "games/faction-war/assets/images/base_red_volcano.png",
+      blueBase: "games/faction-war/assets/images/base_blue_ice.png",
+      redTroop: "games/faction-war/assets/images/troop_red_knight.png",
+      blueTroop: "games/faction-war/assets/images/troop_blue_knight.png"
+    }
   }
 ];
 
@@ -14,17 +20,31 @@ const list = document.getElementById("game-list");
 const count = document.getElementById("game-count");
 
 count.textContent = `${games.length} game`;
-list.innerHTML = games.map((game) => `
-  <article class="game-card" style="--accent-glow: ${game.accent}">
-    <div class="game-card-top">
-      <span class="game-icon" aria-hidden="true">${game.icon}</span>
-      <span class="game-status">${game.status}</span>
+list.innerHTML = games.map((game) => {
+  const coverStyle = game.cover
+    ? `; --game-red-base: url('${game.cover.redBase}'); --game-blue-base: url('${game.cover.blueBase}')`
+    : "";
+  const coverUnits = game.cover?.redTroop && game.cover?.blueTroop
+    ? `<img class="game-card-cover-unit red" src="${game.cover.redTroop}" alt="" /><span class="game-card-cover-vs">VS</span><img class="game-card-cover-unit blue" src="${game.cover.blueTroop}" alt="" />`
+    : `<span class="game-card-cover-fallback">${game.icon}</span>`;
+  return `
+  <article class="game-card" style="--accent-glow: ${game.accent}${coverStyle}">
+    <div class="game-card-cover" aria-hidden="true">
+      <span class="game-card-cover-tag">LIVE BATTLE</span>
+      ${coverUnits}
     </div>
-    <h3>${game.title}</h3>
-    <p>${game.description}</p>
-    <a href="${game.entry}" data-game-window="${game.id}" aria-label="Buka ${game.title} di jendela baru" title="Buka ${game.title} di jendela game">Buka game <span aria-hidden="true">↗</span></a>
+    <div class="game-card-body">
+      <div class="game-card-top">
+        <span class="game-icon" aria-hidden="true">${game.icon}</span>
+        <span class="game-status">${game.status}</span>
+      </div>
+      <h3>${game.title}</h3>
+      <p>${game.description}</p>
+      <a href="${game.entry}" data-game-window="${game.id}" aria-label="Buka ${game.title} di jendela baru" title="Buka ${game.title} di jendela game">Buka game <span aria-hidden="true">↗</span></a>
+    </div>
   </article>
-`).join("") || '<p class="empty-state">Belum ada game di library.</p>';
+`;
+}).join("") || '<p class="empty-state">Belum ada game di library.</p>';
 
 list.addEventListener("click", (event) => {
   const link = event.target.closest("a[data-game-window]");

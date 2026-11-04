@@ -25,6 +25,7 @@ Koneksi WebSocket browser memakai `ws://` pada HTTP lokal dan `wss://` pada HTTP
 
 - Koordinat dasar canvas adalah `W = 1080`, `H = 1920`.
 - Layout arena dapat melebar pada viewport landscape. Sprite dan teks tetap mempertahankan proporsi aslinya.
+- Header stream diringkas ke judul, persentase wilayah, dan nama tim; skor ditampilkan saat hasil ronde. Sprite kastil, troop, avatar, nameplate, health bar, dan legenda gift memakai skala yang lebih besar agar mudah terbaca di OBS.
 - Ketika game aktif, simulasi berjalan sekitar 30 frame per detik. State disimpan setiap 3 detik.
 - Saat game belum mulai, canvas hanya dirender ketika tampilan perlu diperbarui; tidak ada loop simulasi yang terus berjalan.
 - GSAP menggerakkan tween dan efek ambient. Jika CDN tidak tersedia atau pengguna memilih reduced motion, animasi dasar tetap ditangani oleh loop game.
@@ -82,7 +83,9 @@ Legenda ikon di sisi arena hanya digambar ketika mode gift aktif, katalog siap, 
 
 ## Pengaturan dan penyimpanan
 
-Pengaturan disimpan di `localStorage` menggunakan key `faction-war-ui-settings-v1` dan tidak ikut terhapus saat koneksi LIVE baru dibuat.
+Pengaturan disimpan di `games/faction-war/data/settings.sqlite`, pada tabel `game_settings` dengan username akun LIVE sebagai key. Akun yang berbeda mempunyai pengaturan terpisah; akun yang sama memakai pengaturannya lagi saat tersambung pada sesi berikutnya. Database dan file journal SQLite tidak dimasukkan ke Git.
+
+Saat pertama kali dibuka setelah pembaruan ini, pengaturan lama dari `localStorage` key `faction-war-ui-settings-v1` dipindahkan satu kali ke database untuk akun LIVE yang sedang tersambung, lalu key lama dihapus setelah migrasi berhasil. Pengaturan berikutnya hanya dibaca dan ditulis melalui API SQLite. Dialog menampilkan status **Menyimpan…** selama permintaan berlangsung dan pesan error jika server gagal menyimpan.
 
 | Pengaturan | Default |
 | --- | --- |
@@ -95,7 +98,7 @@ Pengaturan disimpan di `localStorage` menggunakan key `faction-war-ui-settings-v
 | Mode coin | Knight 1, Mage 5, Beast 15, Boss 100 coin |
 | Mapping gift | Kosong; dipilih terpisah untuk tiap unit dan tim |
 
-State pertandingan disimpan pada `game-state:faction-war`. Troop, HP, wilayah, skor, ronde, antrean spawn, tim viewer, saldo coin, dan sisa like disimpan berkala dan saat halaman ditutup. Refresh halaman melanjutkan state game. Saat Game Hub memulai sesi TikTok baru, `shared/game-session.js` menghapus key `game-state:*` untuk semua game; key pengaturan game tetap ada.
+State pertandingan tetap disimpan pada `localStorage` key `game-state:faction-war`. Troop, HP, wilayah, skor, ronde, antrean spawn, tim viewer, saldo coin, dan sisa like disimpan berkala dan saat halaman ditutup. Refresh halaman melanjutkan state game. Saat Game Hub memulai sesi TikTok baru, `shared/game-session.js` menghapus key `game-state:*` untuk semua game; database pengaturan tidak ikut dihapus.
 
 Reset game menghentikan koneksi event game, membersihkan troop dan skor, mengosongkan afiliasi/saldo/like viewer, serta menghentikan audio. Pengaturan tidak ikut di-reset.
 
