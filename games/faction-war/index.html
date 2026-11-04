@@ -11,6 +11,40 @@
     <script type="module" src="boot.js"></script>
   </head>
   <body>
+    <section class="asset-loader" id="game-asset-loader" role="status" aria-live="polite" aria-busy="true">
+      <div class="asset-loader-orbit asset-loader-orbit-red" aria-hidden="true"></div>
+      <div class="asset-loader-orbit asset-loader-orbit-blue" aria-hidden="true"></div>
+      <div class="asset-loader-shell">
+        <div class="asset-loader-topline">
+          <span><i class="asset-loader-live-dot" aria-hidden="true"></i> LIVE ARENA</span>
+          <span>DATASIBER · GAME 01</span>
+        </div>
+        <div class="asset-loader-emblem" aria-hidden="true">
+          <span class="asset-loader-emblem-glow"></span>
+          <svg viewBox="0 0 80 80" focusable="false">
+            <path class="asset-loader-shield" d="M40 5 66 14v21c0 18-10 31-26 40C24 66 14 53 14 35V14z" />
+            <path class="asset-loader-sword" d="m27 23 29 29m-1-31-29 29m1-31 7 2-8 8zm25 31 2 7-8-8zm-25-1-7 2 8-8zm25-29 2-7-8 8z" />
+            <path class="asset-loader-crest-line" d="M29 58h22M34 64h12" />
+          </svg>
+        </div>
+        <p class="asset-loader-kicker">BATTLEFIELD INITIALIZATION</p>
+        <h1>Pasukan sedang disiapkan</h1>
+        <p class="asset-loader-copy" id="asset-loader-message">Memuat arena, troop, dan efek visual…</p>
+        <div class="asset-loader-progress-meta">
+          <span id="asset-loader-count">ASSET ARENA</span>
+          <strong><span id="asset-loader-percent">0</span><small>%</small></strong>
+        </div>
+        <div class="asset-loader-track" role="progressbar" aria-label="Memuat asset game" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="asset-loader-progress">
+          <span id="asset-loader-bar"></span>
+        </div>
+        <div class="asset-loader-statusline">
+          <span><i aria-hidden="true"></i><span id="asset-loader-stage">MENYIAPKAN MEDAN PERANG</span></span>
+          <span>FACTION WAR</span>
+        </div>
+      </div>
+      <p class="asset-loader-footer">RED TEAM <span></span> BLUE TEAM</p>
+    </section>
+
     <main class="app-shell">
       <section class="stage" aria-label="Arena Faction War">
         <canvas id="game-canvas" width="1080" height="1920" aria-label="Pertempuran Faction War"></canvas>

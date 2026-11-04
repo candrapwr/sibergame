@@ -3,6 +3,7 @@ import { getListenerSessionId } from "../../shared/tiktok/listener-session.js";
 
 const SETTINGS_KEY = "faction-war-ui-settings-v1";
 const listenerSessionId = getListenerSessionId();
+window.factionWarLoaderStartedAt = performance.now();
 window.gameHubSessionId = listenerSessionId;
 
 function settingsApiUrl(username, sessionId) {

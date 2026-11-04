@@ -1,6 +1,7 @@
 import { tiktokConnector } from "../../shared/tiktok/tiktok-connector.js";
 import { getGameResetEventKey } from "../../shared/game-session.js";
 import { createFactionWarAudio } from "./audio.js";
+import { createFactionWarLoadingScreen } from "./loading-screen.js";
 import { createFactionWarRenderer } from "./renderer.js";
 import { setupFactionWarSettingsPanel } from "./settings-panel.js";
 
@@ -16,6 +17,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const GAME_RESET_EVENT_KEY = getGameResetEventKey(listenerSessionId);
   const animationVideoOverlay = document.getElementById("animation-video-overlay");
   const animationVideoPlayer = document.getElementById("animation-video-player");
+  const loadingScreen = createFactionWarLoadingScreen();
   const W = 1080;
   const H = 1920;
   const MID = W / 2;
@@ -263,8 +265,10 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     canvas, ctx, W, H, MID, state, TEAM, uiSettings, giftCatalog, giftCatalogById, giftCatalogReady,
     GIFT_UNIT_TYPES, TROOP_NAMES, BATTLE_TOP, BATTLE_BOTTOM, TERRITORY_MAX_HP, TERRITORY_BAR_X, TERRITORY_BAR_WIDTH,
     AVATAR_RADIUS, AVATAR_HEAD_GAP, TROOP_WIDTH, TROOP_HEIGHT, BOSS_WIDTH, BOSS_HEIGHT,
-    clamp, teamDisplayName, safeAvatarUrl, safeGiftImageUrl, fitTextSize, territoryPercent, formatTerritoryDelta, requestRender
+    clamp, teamDisplayName, safeAvatarUrl, safeGiftImageUrl, fitTextSize, territoryPercent, formatTerritoryDelta, requestRender,
+    onAssetsProgress: loadingScreen.update
   });
+  const initialLoadingReady = loadingScreen.finish(renderer.assetsReady);
 
   function updateTerritoryBar() {
     const total = state.territoryRed + state.territoryBlue || 1;
@@ -1430,7 +1434,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     document.querySelector("#leave-dialog .reset-dialog-content > p").textContent = "Perubahan yang sudah disimpan tetap tersimpan. Sesi permainan tidak diubah.";
     document.getElementById("cancel-leave").textContent = "Tetap di pengaturan";
     document.getElementById("confirm-leave").textContent = "Keluar";
-    openSettingsPanel();
+    void initialLoadingReady.then(openSettingsPanel);
   }
   requestRender();
 })();

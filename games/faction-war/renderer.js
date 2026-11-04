@@ -2,7 +2,8 @@ export function createFactionWarRenderer({
   canvas, ctx, W, H, MID, state, TEAM, uiSettings, giftCatalog, giftCatalogById, giftCatalogReady,
   GIFT_UNIT_TYPES, TROOP_NAMES, BATTLE_TOP, BATTLE_BOTTOM, TERRITORY_MAX_HP, TERRITORY_BAR_X, TERRITORY_BAR_WIDTH,
   AVATAR_RADIUS, AVATAR_HEAD_GAP, TROOP_WIDTH, TROOP_HEIGHT, BOSS_WIDTH, BOSS_HEIGHT,
-  clamp, teamDisplayName, safeAvatarUrl, safeGiftImageUrl, fitTextSize, territoryPercent, formatTerritoryDelta, requestRender
+  clamp, teamDisplayName, safeAvatarUrl, safeGiftImageUrl, fitTextSize, territoryPercent, formatTerritoryDelta, requestRender,
+  onAssetsProgress = () => {}
 }) {
   let layoutScaleX = 1;
   function resizeGameCanvas() {
@@ -52,9 +53,30 @@ export function createFactionWarRenderer({
   const avatarImageCache = new Map();
   const giftIconCache = new Map();
   const giftPairCanvasCache = new Map();
-  Object.entries(imageFiles).forEach(([key, src]) => {
+  const assetEntries = Object.entries(imageFiles);
+  let settledAssets = 0;
+  let failedAssets = 0;
+  let resolveAssetsReady;
+  const assetsReady = new Promise((resolve) => { resolveAssetsReady = resolve; });
+  onAssetsProgress({ loaded: 0, total: assetEntries.length, failed: 0 });
+  if (!assetEntries.length) resolveAssetsReady({ total: 0, failed: 0 });
+
+  assetEntries.forEach(([key, src]) => {
     const image = new Image();
-    image.onload = () => requestRender();
+    let settled = false;
+    const finishAsset = (loaded) => {
+      if (settled) return;
+      settled = true;
+      settledAssets += 1;
+      if (!loaded) failedAssets += 1;
+      onAssetsProgress({ loaded: settledAssets, total: assetEntries.length, failed: failedAssets });
+      requestRender();
+      if (settledAssets === assetEntries.length) {
+        resolveAssetsReady({ total: assetEntries.length, failed: failedAssets });
+      }
+    };
+    image.onload = () => finishAsset(true);
+    image.onerror = () => finishAsset(false);
     image.src = src;
     images[key] = image;
   });
@@ -799,5 +821,5 @@ export function createFactionWarRenderer({
     ctx.restore();
   }
 
-  return { render, resize: resizeGameCanvas };
+  return { render, resize: resizeGameCanvas, assetsReady };
 }

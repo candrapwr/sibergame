@@ -14,6 +14,7 @@ Faction War adalah game arena dua tim berbasis canvas. Troop muncul dari sisi ti
 | `styles.css` | Layout fullscreen, kontrol, modal, serta tampilan responsif. |
 | `boot.js` | Memeriksa mode main atau konfigurasi, memuat pengaturan dan katalog gift, lalu memuat `game.js`. |
 | `game.js` | State, simulasi pertempuran, event TikTok, penyimpanan, dan orkestrasi modul game. |
+| `loading-screen.js` | Menampilkan progres preload sprite, menahan layar minimum 1,8 detik, lalu menutup overlay dengan transisi. |
 | `renderer.js` | Setup canvas, pemuatan sprite, cache gambar, dan semua fungsi render arena. |
 | `audio.js` | Efek suara, musik latar, serta pemutaran video animasi per ronde. |
 | `settings-panel.js` | Modal pengaturan, tab, mapping gift, filter katalog, dan upload video. |
