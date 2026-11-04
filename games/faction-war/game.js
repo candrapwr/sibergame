@@ -1,5 +1,5 @@
 import { tiktokConnector } from "../../shared/tiktok/tiktok-connector.js";
-import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
+import { getGameResetEventKey } from "../../shared/game-session.js";
 
 (() => {
   "use strict";
@@ -9,6 +9,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
   const settingsOnlyMode = window.factionWarSettingsOnly === true;
+  const listenerSessionId = window.gameHubSessionId || "default";
+  const GAME_RESET_EVENT_KEY = getGameResetEventKey(listenerSessionId);
   const animationVideoOverlay = document.getElementById("animation-video-overlay");
   const animationVideoPlayer = document.getElementById("animation-video-player");
   const W = 1080;
@@ -18,8 +20,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const TERRITORY_MAX_HP = 100 * TERRITORY_HP_MULTIPLIER;
   const TERRITORY_BAR_X = 145;
   const TERRITORY_BAR_WIDTH = 790;
-  const SAVE_KEY = "game-state:faction-war";
-  const LEGACY_SAVE_KEY = "faction-war-save-v1";
+  const SAVE_KEY = `game-state:${listenerSessionId}:faction-war`;
+  const LEGACY_SAVE_KEY = listenerSessionId === "default" ? "faction-war-save-v1" : "";
   const GIFT_UNIT_TYPES = ["knight", "mage", "beast", "boss"];
   const DEFAULT_SETTINGS = {
     gameTitle: "Faction War",
@@ -2056,7 +2058,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
 
     try {
       window.localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
-      window.localStorage.removeItem(LEGACY_SAVE_KEY);
+      if (LEGACY_SAVE_KEY) window.localStorage.removeItem(LEGACY_SAVE_KEY);
     } catch (error) {
       // Storage may be unavailable or full; keep the live match running.
     }
@@ -2065,7 +2067,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   function restoreGameState() {
     let saved;
     try {
-      const raw = window.localStorage.getItem(SAVE_KEY) || window.localStorage.getItem(LEGACY_SAVE_KEY);
+      const raw = window.localStorage.getItem(SAVE_KEY) || (LEGACY_SAVE_KEY && window.localStorage.getItem(LEGACY_SAVE_KEY));
       if (!raw) return;
       saved = JSON.parse(raw);
     } catch (error) {

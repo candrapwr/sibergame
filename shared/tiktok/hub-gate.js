@@ -1,4 +1,5 @@
 import { beginGameSession } from "../game-session.js";
+import { addListenerSession, createListenerSessionId, getListenerSessionId } from "./listener-session.js";
 
 const panel = document.getElementById("connection-panel");
 const form = document.getElementById("connection-form");
@@ -14,6 +15,7 @@ const readyPanel = document.getElementById("connection-ready");
 const connectedUsername = document.getElementById("connected-username");
 const changeAccountButton = document.getElementById("change-account-button");
 let pollTimer = null;
+const listenerSessionId = getListenerSessionId();
 
 const inProgressStates = new Set(["room_lookup", "connecting", "disconnecting"]);
 const stepOrder = ["account", "room", "socket"];
@@ -34,13 +36,14 @@ function openGameSettings() {
   const target = new URL("/games/faction-war/index.html", window.location.origin);
   target.searchParams.set("settingsOnly", "1");
   target.searchParams.set("username", username);
+  target.searchParams.set("sessionId", listenerSessionId);
   const width = window.screen.availWidth || 1440;
   const height = window.screen.availHeight || 900;
   const features = [
     "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=no", "resizable=yes",
     `width=${width}`, `height=${height}`, "left=0", "top=0"
   ].join(",");
-  const gameWindow = window.open(target.href, `game-settings-faction-war-${username.toLowerCase()}`, features);
+  const gameWindow = window.open(target.href, `game-settings-faction-war-${username.toLowerCase()}-${listenerSessionId}`, features);
   if (gameWindow) gameWindow.focus();
   else window.location.assign(target.href);
 }
@@ -69,6 +72,7 @@ function safeGameTarget() {
   try {
     const target = new URL(next, window.location.origin);
     if (target.origin !== window.location.origin || !target.pathname.startsWith("/games/")) return "";
+    target.searchParams.set("sessionId", listenerSessionId);
     return `${target.pathname}${target.search}${target.hash}`;
   } catch { return ""; }
 }
@@ -86,7 +90,7 @@ function render(state) {
   readyPanel.hidden = !connected;
   connectionTitle.textContent = connected ? "Koneksi LIVE aktif" : "Hubungkan akun LIVE";
   connectionCopy.textContent = connected
-    ? "Listener siap. Semua game di hub akan menerima event dari siaran ini."
+    ? "Listener aktif untuk sesi ini. Game yang dibuka dari tab ini menerima event akun ini; sesi streamer lain tetap terpisah."
     : failed
       ? "Koneksi belum berhasil. Periksa username dan pastikan akun sedang LIVE, atau buka pengaturan game tanpa koneksi."
       : "Masukkan username akun TikTok LIVE untuk bermain, atau buka pengaturan game meski akun sedang offline.";
@@ -109,11 +113,12 @@ function render(state) {
 
   if (connectionState === "connected") {
     clearTimeout(pollTimer);
-    beginGameSession(state.gameSessionId);
+    beginGameSession(state.gameSessionId, listenerSessionId);
     const target = safeGameTarget();
     if (target) window.location.replace(target);
+    else schedulePoll(15000);
   } else if (busy) {
-    schedulePoll();
+    schedulePoll(800);
   } else {
     clearTimeout(pollTimer);
   }
@@ -128,7 +133,7 @@ function showServerUnavailable(error) {
 }
 
 async function getStatus() {
-  const response = await fetch("/api/tiktok/status", { cache: "no-store" });
+  const response = await fetch(addListenerSession("/api/tiktok/status", listenerSessionId), { cache: "no-store" });
   if (!response.ok) throw new Error(`Server merespons ${response.status}.`);
   return response.json();
 }
@@ -138,9 +143,9 @@ async function refreshStatus() {
   catch (error) { showServerUnavailable(error); }
 }
 
-function schedulePoll() {
+function schedulePoll(delay = 800) {
   clearTimeout(pollTimer);
-  pollTimer = window.setTimeout(refreshStatus, 800);
+  pollTimer = window.setTimeout(refreshStatus, delay);
 }
 
 form.addEventListener("submit", async (event) => {
@@ -152,7 +157,7 @@ form.addEventListener("submit", async (event) => {
   }
   render({ status: "room_lookup", username, message: `Mencari siaran LIVE @${username}…` });
   try {
-    const response = await fetch("/api/tiktok/connect", {
+    const response = await fetch(addListenerSession("/api/tiktok/connect", listenerSessionId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username })
@@ -171,7 +176,7 @@ form.addEventListener("submit", async (event) => {
 changeAccountButton.addEventListener("click", async () => {
   changeAccountButton.disabled = true;
   try {
-    const response = await fetch("/api/tiktok/disconnect", { method: "POST" });
+    const response = await fetch(addListenerSession("/api/tiktok/disconnect", listenerSessionId), { method: "POST" });
     const state = await response.json();
     if (!response.ok) throw new Error(state.error || "Koneksi belum dapat diputus.");
     usernameInput.value = "";
@@ -183,6 +188,21 @@ changeAccountButton.addEventListener("click", async () => {
   } finally {
     changeAccountButton.disabled = false;
   }
+});
+
+document.getElementById("new-streamer-session-button").addEventListener("click", () => {
+  const nextSessionId = createListenerSessionId();
+  const target = new URL("/", window.location.origin);
+  target.searchParams.set("sessionId", nextSessionId);
+  const width = window.screen.availWidth || 1440;
+  const height = window.screen.availHeight || 900;
+  const features = [
+    "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=yes", "resizable=yes",
+    `width=${width}`, `height=${height}`, "left=0", "top=0"
+  ].join(",");
+  const sessionWindow = window.open(target.href, `streamer-session-${nextSessionId}`, features);
+  if (sessionWindow) sessionWindow.focus();
+  else window.location.assign(target.href);
 });
 
 refreshStatus();

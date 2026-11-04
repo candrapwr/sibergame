@@ -24,6 +24,8 @@ const ROOT = __dirname;
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT) || 8050;
 const STATUS_IN_PROGRESS = new Set(["room_lookup", "connecting", "disconnecting"]);
+const LISTENER_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LISTENER_SESSION_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ANIMATION_VIDEO_BYTES = 100 * 1024 * 1024;
 const ANIMATION_VIDEO_EXTENSIONS = new Set([".mp4", ".webm"]);
 const MIME_TYPES = {
@@ -44,47 +46,112 @@ const MIME_TYPES = {
   ".ico": "image/x-icon"
 };
 
-let connection = null;
-let giftCatalog = [];
-let status = {
-  status: "disconnected",
-  username: "",
-  message: "Masukkan username TikTok yang sedang LIVE.",
-  error: "",
-  roomId: "",
-  giftCatalogStatus: "unavailable",
-  giftCatalogCount: 0,
-  updatedAt: Date.now()
-};
+const listenerSessions = new Map();
 
 const httpServer = http.createServer(handleRequest);
 const websocketServer = new WebSocketServer({ noServer: true });
 
-httpServer.on("upgrade", (request, socket, head) => {
-  let pathname;
-  try { pathname = new URL(request.url, `http://${request.headers.host || "localhost"}`).pathname; }
-  catch { socket.destroy(); return; }
-  if (pathname !== "/tiktok") { socket.destroy(); return; }
-  websocketServer.handleUpgrade(request, socket, head, (client) => {
-    websocketServer.emit("connection", client, request);
+websocketServer.on("connection", (client) => {
+  const heartbeat = setInterval(() => {
+    if (client.readyState === WebSocket.OPEN) client.ping();
+  }, 30000);
+  client.on("pong", () => {
+    const session = listenerSessions.get(client.listenerSessionId);
+    if (session) session.lastSeenAt = Date.now();
   });
+  client.on("close", () => clearInterval(heartbeat));
 });
 
-function setStatus(nextStatus, message, error = "") {
-  status = {
-    ...status,
+const listenerSessionCleanup = setInterval(() => {
+  const expiredBefore = Date.now() - LISTENER_SESSION_IDLE_TTL_MS;
+  for (const [sessionId, session] of listenerSessions) {
+    if (session.lastSeenAt >= expiredBefore) continue;
+    if (session.connection) void session.connection.disconnect().catch(() => {});
+    for (const client of websocketServer.clients) {
+      if (client.listenerSessionId === sessionId) client.close(1001, "Listener session expired");
+    }
+    listenerSessions.delete(sessionId);
+  }
+}, 10 * 60 * 1000);
+listenerSessionCleanup.unref();
+
+function createDisconnectedStatus() {
+  return {
+    status: "disconnected",
+    username: "",
+    message: "Masukkan username TikTok yang sedang LIVE.",
+    error: "",
+    roomId: "",
+    giftCatalogStatus: "unavailable",
+    giftCatalogCount: 0,
+    updatedAt: Date.now()
+  };
+}
+
+function getListenerSession(sessionId) {
+  const normalizedId = String(sessionId || "");
+  if (!LISTENER_SESSION_ID_PATTERN.test(normalizedId)) throw new Error("ID sesi listener tidak valid.");
+  let session = listenerSessions.get(normalizedId);
+  if (!session) {
+    session = {
+      id: normalizedId,
+      connection: null,
+      giftCatalog: [],
+      status: createDisconnectedStatus(),
+      lastSeenAt: Date.now()
+    };
+    listenerSessions.set(normalizedId, session);
+  }
+  session.lastSeenAt = Date.now();
+  return session;
+}
+
+function getListenerSessionFromUrl(requestUrl) {
+  return getListenerSession(requestUrl.searchParams.get("sessionId"));
+}
+
+function requireListenerSession(requestUrl, response) {
+  try { return getListenerSessionFromUrl(requestUrl); }
+  catch (error) {
+    sendJson(response, 400, { error: error.message });
+    return null;
+  }
+}
+
+function setSessionStatus(session, nextStatus, message, error = "") {
+  session.status = {
+    ...session.status,
     status: nextStatus,
     message,
     error,
     updatedAt: Date.now()
   };
-  return status;
+  session.lastSeenAt = Date.now();
+  return session.status;
 }
 
-function clearGiftCatalog() {
-  giftCatalog = [];
-  status = { ...status, giftCatalogStatus: "unavailable", giftCatalogCount: 0 };
+function clearGiftCatalog(session) {
+  session.giftCatalog = [];
+  session.status = { ...session.status, giftCatalogStatus: "unavailable", giftCatalogCount: 0 };
 }
+
+httpServer.on("upgrade", (request, socket, head) => {
+  let pathname;
+  let session;
+  try {
+    const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    pathname = requestUrl.pathname;
+    if (pathname !== "/tiktok") { socket.destroy(); return; }
+    session = getListenerSessionFromUrl(requestUrl);
+  }
+  catch { socket.destroy(); return; }
+  websocketServer.handleUpgrade(request, socket, head, (client) => {
+    client.listenerSessionId = session.id;
+    client.on("close", () => { session.lastSeenAt = Date.now(); });
+    session.lastSeenAt = Date.now();
+    websocketServer.emit("connection", client, request);
+  });
+});
 
 function sendJson(response, code, body) {
   const payload = JSON.stringify(body);
@@ -138,7 +205,7 @@ function normalizeGiftCatalog(gifts) {
   }).filter((gift) => gift.id && gift.name);
 }
 
-async function handleGameSettingsRequest(request, response, gameId) {
+async function handleGameSettingsRequest(request, response, gameId, listenerSession = null) {
   if (!fs.existsSync(path.join(ROOT, "games", gameId, "index.html"))) {
     return sendJson(response, 404, { error: "Game tidak ditemukan." });
   }
@@ -153,7 +220,7 @@ async function handleGameSettingsRequest(request, response, gameId) {
   const requestedUsername = settingsUrl.searchParams.get("username");
   try {
     if (hasRequestedUsername) username = cleanUsername(requestedUsername);
-    else if (status.status === "connected" && status.username) username = cleanUsername(status.username);
+    else if (listenerSession?.status.status === "connected" && listenerSession.status.username) username = cleanUsername(listenerSession.status.username);
     else return sendJson(response, 400, { error: "Username TikTok diperlukan untuk membuka pengaturan saat tidak terhubung." });
   } catch { return sendJson(response, 400, { error: "Username TikTok tidak valid." }); }
 
@@ -345,11 +412,22 @@ async function handleRequest(request, response) {
       return handleAnimationVideoRequest(request, response, requestUrl);
     }
     const gameSettingsMatch = requestUrl.pathname.match(/^\/api\/games\/([a-z0-9]+(?:-[a-z0-9]+)*)\/settings$/);
-    if (gameSettingsMatch) return handleGameSettingsRequest(request, response, gameSettingsMatch[1]);
+    if (gameSettingsMatch) {
+      let listenerSession = null;
+      if (requestUrl.searchParams.has("sessionId")) {
+        listenerSession = requireListenerSession(requestUrl, response);
+        if (!listenerSession) return;
+      }
+      return handleGameSettingsRequest(request, response, gameSettingsMatch[1], listenerSession);
+    }
     if (requestUrl.pathname === "/api/tiktok/status" && request.method === "GET") {
-      return sendJson(response, 200, status);
+      const listenerSession = requireListenerSession(requestUrl, response);
+      if (!listenerSession) return;
+      return sendJson(response, 200, listenerSession.status);
     }
     if (requestUrl.pathname === "/api/tiktok/gifts" && request.method === "GET") {
+      const listenerSession = requireListenerSession(requestUrl, response);
+      if (!listenerSession) return;
       const gameId = requestUrl.searchParams.get("game") || "faction-war";
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(gameId) || !fs.existsSync(path.join(ROOT, "games", gameId, "index.html"))) {
         return sendJson(response, 404, { error: "Game tidak ditemukan." });
@@ -365,22 +443,22 @@ async function handleRequest(request, response) {
 
       let liveUsername = "";
       try {
-        if (status.status === "connected" && status.username) liveUsername = cleanUsername(status.username);
+        if (listenerSession.status.status === "connected" && listenerSession.status.username) liveUsername = cleanUsername(listenerSession.status.username);
       } catch { /* Invalid listener state cannot be used for settings lookup. */ }
-      const liveCatalogReady = Boolean(liveUsername && status.giftCatalogStatus === "ready" && giftCatalog.length);
+      const liveCatalogReady = Boolean(liveUsername && listenerSession.status.giftCatalogStatus === "ready" && listenerSession.giftCatalog.length);
       const requestedIsLiveAccount = !hasRequestedUsername
         || requestedUsername.toLowerCase() === liveUsername.toLowerCase();
 
       if (liveCatalogReady && requestedIsLiveAccount) {
-        try { saveGameGiftCatalog(ROOT, gameId, liveUsername, giftCatalog); }
+        try { saveGameGiftCatalog(ROOT, gameId, liveUsername, listenerSession.giftCatalog); }
         catch (error) { console.error(`Gagal menyimpan katalog gift untuk game ${gameId}:`, error.message); }
         return sendJson(response, 200, {
           status: "ready",
           source: "live",
           username: liveUsername,
-          gameSessionId: status.gameSessionId || "",
-          giftCount: giftCatalog.length,
-          gifts: giftCatalog
+          gameSessionId: listenerSession.status.gameSessionId || "",
+          giftCount: listenerSession.giftCatalog.length,
+          gifts: listenerSession.giftCatalog
         });
       }
 
@@ -406,60 +484,64 @@ async function handleRequest(request, response) {
       }
 
       return sendJson(response, 200, {
-        status: status.status === "connected" ? status.giftCatalogStatus || "unavailable" : "unavailable",
+        status: listenerSession.status.status === "connected" ? listenerSession.status.giftCatalogStatus || "unavailable" : "unavailable",
         source: "none",
         username: requestedUsername || liveUsername || "",
-        gameSessionId: status.gameSessionId || "",
+        gameSessionId: listenerSession.status.gameSessionId || "",
         giftCount: 0,
         gifts: []
       });
     }
     if (requestUrl.pathname === "/api/tiktok/connect" && request.method === "POST") {
+      const listenerSession = requireListenerSession(requestUrl, response);
+      if (!listenerSession) return;
       let body;
       let username;
       try {
         body = await readJson(request);
         username = cleanUsername(body.username);
       } catch (error) {
-        return sendJson(response, 400, { ...status, error: error.message });
+        return sendJson(response, 400, { ...listenerSession.status, error: error.message });
       }
-      if (status.status === "connected") {
-        return sendJson(response, 409, { ...status, error: "Listener sudah terhubung. Putuskan akun saat ini untuk menggantinya." });
+      if (listenerSession.status.status === "connected") {
+        return sendJson(response, 409, { ...listenerSession.status, error: "Listener sudah terhubung. Putuskan akun saat ini untuk menggantinya." });
       }
-      if (STATUS_IN_PROGRESS.has(status.status)) {
-        return sendJson(response, 409, { ...status, error: "Proses koneksi masih berjalan." });
+      if (STATUS_IN_PROGRESS.has(listenerSession.status.status)) {
+        return sendJson(response, 409, { ...listenerSession.status, error: "Proses koneksi masih berjalan." });
       }
-      try { startConnection(username); }
+      try { startConnection(listenerSession, username); }
       catch (error) {
         return sendJson(response, 400, {
-          ...status,
+          ...listenerSession.status,
           status: "error",
           username,
           message: "Username tidak dapat diproses.",
           error: error.message || "Masukkan username TikTok yang valid."
         });
       }
-      return sendJson(response, 202, status);
+      return sendJson(response, 202, listenerSession.status);
     }
     if (requestUrl.pathname === "/api/tiktok/disconnect" && request.method === "POST") {
-      if (STATUS_IN_PROGRESS.has(status.status)) {
-        return sendJson(response, 409, { ...status, error: "Tunggu proses koneksi selesai sebelum mengganti akun." });
+      const listenerSession = requireListenerSession(requestUrl, response);
+      if (!listenerSession) return;
+      if (STATUS_IN_PROGRESS.has(listenerSession.status.status)) {
+        return sendJson(response, 409, { ...listenerSession.status, error: "Tunggu proses koneksi selesai sebelum mengganti akun." });
       }
-      const current = connection;
+      const current = listenerSession.connection;
       if (!current) {
-        setStatus("disconnected", "Listener terputus.");
-        clearGiftCatalog();
-        status = { ...status, username: "", roomId: "" };
-        return sendJson(response, 200, status);
+        setSessionStatus(listenerSession, "disconnected", "Listener terputus.");
+        clearGiftCatalog(listenerSession);
+        listenerSession.status = { ...listenerSession.status, username: "", roomId: "" };
+        return sendJson(response, 200, listenerSession.status);
       }
-      setStatus("disconnecting", "Memutuskan koneksi TikTok LIVE…");
+      setSessionStatus(listenerSession, "disconnecting", "Memutuskan koneksi TikTok LIVE…");
       try { await current.disconnect(); }
       catch (error) { console.warn("Gagal menutup koneksi TikTok dengan rapi:", error.message); }
-      if (connection === current) connection = null;
-      setStatus("disconnected", "Koneksi diputus. Masukkan username untuk menghubungkan akun lain.");
-      clearGiftCatalog();
-      status = { ...status, username: "", roomId: "" };
-      return sendJson(response, 200, status);
+      if (listenerSession.connection === current) listenerSession.connection = null;
+      setSessionStatus(listenerSession, "disconnected", "Koneksi diputus. Masukkan username untuk menghubungkan akun lain.");
+      clearGiftCatalog(listenerSession);
+      listenerSession.status = { ...listenerSession.status, username: "", roomId: "" };
+      return sendJson(response, 200, listenerSession.status);
     }
     return sendJson(response, 404, { error: "Endpoint tidak ditemukan." });
   }
@@ -549,16 +631,16 @@ async function handleRequest(request, response) {
   }
 }
 
-function startConnection(username) {
+function startConnection(listenerSession, username) {
   const liveConnection = new SiberLiveConnection(username, {
     signApiKey: process.env.SIGN_API_KEY,
     signApiUrl: process.env.SIGN_API_URL,
     enableExtendedGiftInfo: true
   });
   const gameSessionId = randomUUID();
-  giftCatalog = [];
-  connection = liveConnection;
-  status = {
+  listenerSession.giftCatalog = [];
+  listenerSession.connection = liveConnection;
+  listenerSession.status = {
     status: "room_lookup",
     gameSessionId,
     giftCatalogStatus: "loading",
@@ -571,23 +653,23 @@ function startConnection(username) {
   };
 
   liveConnection.on(ControlEvent.ERROR, ({ info, exception }) => {
-    console.warn(`[Siber Live] ${info}:`, exception?.message || "Unknown error");
+    console.warn(`[Siber Live @${liveConnection.uniqueId}] ${info}:`, exception?.message || "Unknown error");
   });
   liveConnection.on(ControlEvent.DISCONNECTED, ({ code, reason }) => {
-    if (connection !== liveConnection || status.status === "disconnecting") return;
-    setStatus("disconnected", `Koneksi LIVE terputus${code ? ` (${code})` : ""}${reason ? `: ${String(reason)}` : ""}.`);
-    clearGiftCatalog();
+    if (listenerSession.connection !== liveConnection || listenerSession.status.status === "disconnecting") return;
+    setSessionStatus(listenerSession, "disconnected", `Koneksi LIVE terputus${code ? ` (${code})` : ""}${reason ? `: ${String(reason)}` : ""}.`);
+    clearGiftCatalog(listenerSession);
   });
   liveConnection.on(WebcastEvent.STREAM_END, () => {
-    if (connection === liveConnection) {
-      setStatus("disconnected", `Siaran LIVE @${liveConnection.uniqueId} telah berakhir.`);
-      clearGiftCatalog();
+    if (listenerSession.connection === liveConnection) {
+      setSessionStatus(listenerSession, "disconnected", `Siaran LIVE @${liveConnection.uniqueId} telah berakhir.`);
+      clearGiftCatalog(listenerSession);
     }
   });
 
   liveConnection.on(WebcastEvent.CHAT, (data) => {
     const user = normalizeUser(data.user);
-    broadcastEvent({
+    broadcastEvent(listenerSession, {
       eventType: "comment",
       username: user.uniqueId || user.nickname,
       userId: user.userId || user.secUid,
@@ -599,7 +681,7 @@ function startConnection(username) {
   liveConnection.on(WebcastEvent.GIFT, (data) => {
     if (Number(data.gift?.type) === 1 && !data.repeatEnd) return;
     const user = normalizeUser(data.user);
-    broadcastEvent({
+    broadcastEvent(listenerSession, {
       eventType: "gift",
       username: user.uniqueId || user.nickname,
       userId: user.userId || user.secUid,
@@ -613,7 +695,7 @@ function startConnection(username) {
   });
   liveConnection.on(WebcastEvent.LIKE, (data) => {
     const user = normalizeUser(data.user);
-    broadcastEvent({
+    broadcastEvent(listenerSession, {
       eventType: "like",
       username: user.uniqueId || user.nickname,
       userId: user.userId || user.secUid,
@@ -622,52 +704,52 @@ function startConnection(username) {
       timestamp: Date.now()
     });
   });
-  liveConnection.on(WebcastEvent.FOLLOW, (data) => broadcastUserEvent("follow", data));
-  liveConnection.on(WebcastEvent.SHARE, (data) => broadcastUserEvent("share", data));
-  liveConnection.on(WebcastEvent.MEMBER, (data) => broadcastUserEvent("join", data));
+  liveConnection.on(WebcastEvent.FOLLOW, (data) => broadcastUserEvent(listenerSession, "follow", data));
+  liveConnection.on(WebcastEvent.SHARE, (data) => broadcastUserEvent(listenerSession, "share", data));
+  liveConnection.on(WebcastEvent.MEMBER, (data) => broadcastUserEvent(listenerSession, "join", data));
 
   void (async () => {
     try {
       const roomId = await liveConnection.fetchRoomId();
-      if (connection !== liveConnection) return;
+      if (listenerSession.connection !== liveConnection) return;
       if (!roomId) throw new Error("Room LIVE tidak ditemukan.");
-      status = {
-        ...status,
+      listenerSession.status = {
+        ...listenerSession.status,
         status: "connecting",
         roomId: String(roomId),
         message: `Room ditemukan. Memuat katalog gift dan menghubungkan LIVE @${liveConnection.uniqueId}…`,
         updatedAt: Date.now()
       };
       await liveConnection.connect(roomId);
-      if (connection !== liveConnection) return;
-      giftCatalog = normalizeGiftCatalog(liveConnection.availableGifts);
-      if (giftCatalog.length) {
-        try { saveGameGiftCatalog(ROOT, "faction-war", liveConnection.uniqueId, giftCatalog); }
+      if (listenerSession.connection !== liveConnection) return;
+      listenerSession.giftCatalog = normalizeGiftCatalog(liveConnection.availableGifts);
+      if (listenerSession.giftCatalog.length) {
+        try { saveGameGiftCatalog(ROOT, "faction-war", liveConnection.uniqueId, listenerSession.giftCatalog); }
         catch (error) { console.error("Gagal menyimpan katalog gift Faction War:", error.message); }
       }
-      status = {
-        ...status,
-        giftCatalogStatus: giftCatalog.length ? "ready" : "failed",
-        giftCatalogCount: giftCatalog.length
+      listenerSession.status = {
+        ...listenerSession.status,
+        giftCatalogStatus: listenerSession.giftCatalog.length ? "ready" : "failed",
+        giftCatalogCount: listenerSession.giftCatalog.length
       };
-      const giftMessage = giftCatalog.length
-        ? `${giftCatalog.length} gift tersedia di pengaturan.`
+      const giftMessage = listenerSession.giftCatalog.length
+        ? `${listenerSession.giftCatalog.length} gift tersedia di pengaturan.`
         : "Katalog gift gagal dimuat; mode gift tidak tersedia.";
-      setStatus("connected", `Terhubung ke LIVE @${liveConnection.uniqueId}. ${giftMessage}`);
+      setSessionStatus(listenerSession, "connected", `Terhubung ke LIVE @${liveConnection.uniqueId}. ${giftMessage}`);
     } catch (error) {
-      if (connection !== liveConnection) return;
+      if (listenerSession.connection !== liveConnection) return;
       console.warn(`[Siber Live] Koneksi @${liveConnection.uniqueId} gagal:`, error.message);
-      giftCatalog = [];
-      setStatus("error", "Koneksi ke TikTok LIVE gagal.", error.message || "Periksa username dan status siaran LIVE.");
-      status = { ...status, giftCatalogStatus: "failed", giftCatalogCount: 0 };
-      connection = null;
+      listenerSession.giftCatalog = [];
+      setSessionStatus(listenerSession, "error", "Koneksi ke TikTok LIVE gagal.", error.message || "Periksa username dan status siaran LIVE.");
+      listenerSession.status = { ...listenerSession.status, giftCatalogStatus: "failed", giftCatalogCount: 0 };
+      listenerSession.connection = null;
     }
   })();
 }
 
-function broadcastUserEvent(eventType, data) {
+function broadcastUserEvent(listenerSession, eventType, data) {
   const user = normalizeUser(data.user);
-  broadcastEvent({
+  broadcastEvent(listenerSession, {
     eventType,
     username: user.uniqueId || user.nickname,
     userId: user.userId || user.secUid,
@@ -676,18 +758,19 @@ function broadcastUserEvent(eventType, data) {
   });
 }
 
-function broadcastEvent(event) {
+function broadcastEvent(listenerSession, event) {
   const payload = JSON.stringify(event);
   for (const client of websocketServer.clients) {
-    if (client.readyState === WebSocket.OPEN) client.send(payload);
+    if (client.listenerSessionId === listenerSession.id && client.readyState === WebSocket.OPEN) client.send(payload);
   }
+  listenerSession.lastSeenAt = Date.now();
 }
 
 httpServer.listen(PORT, HOST, () => {
   const browserHost = HOST === "0.0.0.0" || HOST === "::" ? "localhost" : HOST;
   const appUrl = process.env.APP_URL || `http://${browserHost}:${PORT}`;
   console.log(`Game Hub tersedia di ${appUrl}`);
-  console.log("WebSocket event TikTok tersedia di /tiktok setelah koneksi LIVE berhasil.");
+  console.log("WebSocket event TikTok tersedia per listener session di /tiktok?sessionId=…");
   if (process.env.OPEN_BROWSER === "true") openAppInBrowser(appUrl);
 });
 
@@ -712,8 +795,9 @@ function openAppInBrowser(url) {
 }
 
 async function shutdown() {
-  if (connection) {
-    try { await connection.disconnect(); }
+  for (const listenerSession of listenerSessions.values()) {
+    if (!listenerSession.connection) continue;
+    try { await listenerSession.connection.disconnect(); }
     catch { /* process is exiting */ }
   }
   websocketServer.close();

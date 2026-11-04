@@ -108,6 +108,7 @@ h1, h2, p { margin-top: 0; }
 .connection-ready strong { color: #fff; }
 .connection-ready button { margin-left: auto; padding: 7px 10px; border: 1px solid rgba(255,255,255,.14); border-radius: 3px; color: #d9def4; background: rgba(255,255,255,.06); font: inherit; font-size: 10px; cursor: pointer; }
 .connection-ready .connection-config-button { margin-left: auto; }
+.connection-ready .new-streamer-session-button { margin-left: 0; }
 .connection-ready #change-account-button { margin-left: 0; }
 .connection-ready button:hover { background: rgba(255,255,255,.12); }
 .connection-panel[data-connection-state="connected"] .connection-visual { filter: saturate(1.2); }

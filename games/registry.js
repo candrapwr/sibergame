@@ -1,3 +1,5 @@
+import { addListenerSession, getListenerSessionId } from "../shared/tiktok/listener-session.js";
+
 const games = [
   {
     id: "faction-war",
@@ -57,7 +59,8 @@ list.addEventListener("click", (event) => {
     "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=no", "resizable=yes",
     `width=${width}`, `height=${height}`, "left=0", "top=0"
   ].join(",");
-  const gameWindow = window.open(link.href, `game-window-${link.dataset.gameWindow}`, features);
+  const target = addListenerSession(link.href, getListenerSessionId());
+  const gameWindow = window.open(target.href, `game-window-${link.dataset.gameWindow}-${getListenerSessionId()}`, features);
   if (gameWindow) gameWindow.focus();
-  else window.location.assign(link.href);
+  else window.location.assign(target.href);
 });

@@ -1,14 +1,18 @@
 import { requireConnectedTikTok } from "../../shared/tiktok/game-entry.js";
+import { getListenerSessionId } from "../../shared/tiktok/listener-session.js";
 
 const SETTINGS_KEY = "faction-war-ui-settings-v1";
+const listenerSessionId = getListenerSessionId();
+window.gameHubSessionId = listenerSessionId;
 
-function settingsApiUrl(username) {
+function settingsApiUrl(username, sessionId) {
   const url = new URL("/api/games/faction-war/settings", window.location.origin);
   if (username) url.searchParams.set("username", username);
+  url.searchParams.set("sessionId", sessionId);
   return `${url.pathname}${url.search}`;
 }
 
-async function loadGameSettings(username = "") {
+async function loadGameSettings(username = "", sessionId = listenerSessionId) {
   let legacySettings = null;
   try {
     const legacyValue = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || "null");
@@ -18,7 +22,7 @@ async function loadGameSettings(username = "") {
   }
 
   try {
-    const endpoint = settingsApiUrl(username);
+    const endpoint = settingsApiUrl(username, sessionId);
     const response = await fetch(endpoint, { cache: "no-store" });
     const saved = await response.json();
     if (!response.ok) throw new Error(saved.error || "Pengaturan game gagal dimuat.");
@@ -62,6 +66,7 @@ if (settingsOnly && !validSettingsUsername) {
 
     const giftsUrl = new URL("/api/tiktok/gifts", window.location.origin);
     giftsUrl.searchParams.set("game", "faction-war");
+    giftsUrl.searchParams.set("sessionId", listenerSessionId);
     if (settingsOnly) giftsUrl.searchParams.set("username", settingsUsername);
     const [catalogResponse, gameSettings] = await Promise.all([
       fetch(`${giftsUrl.pathname}${giftsUrl.search}`, { cache: "no-store" }).catch(() => null),

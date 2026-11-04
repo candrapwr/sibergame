@@ -17,7 +17,7 @@ Faction War adalah game arena dua tim berbasis canvas. Troop muncul dari sisi ti
 | `assets/images/` | Sprite kastil, troop, boss, ikon, dan VFX. |
 | `assets/audio/` | Efek suara troop, suara kemenangan, dan musik latar. Lihat [daftar audio dan sumber lisensinya](assets/audio/README.md). |
 
-Mode bermain dibuka melalui Game Hub setelah akun LIVE tersambung. `boot.js` mendapatkan endpoint `/tiktok` dari status koneksi dan meminta katalog melalui `/api/tiktok/gifts`. Katalog disiapkan sebelum `game.js` dimuat. Tombol **Mulai** mengaktifkan simulasi dan koneksi event untuk game ini. Selama belum dimulai atau ronde sudah selesai, event TikTok tidak mengubah gameplay. Mode **Pengaturan** dapat dibuka tanpa LIVE; mode ini tidak memulihkan pertandingan dan tidak menghubungkan listener.
+Mode bermain dibuka melalui Game Hub setelah akun LIVE tersambung. `boot.js` mendapatkan status dan katalog melalui API dengan `sessionId`, lalu game membuka endpoint `/tiktok?sessionId=...`. Tombol **Mulai** mengaktifkan simulasi dan koneksi event untuk game ini. Selama belum dimulai atau ronde sudah selesai, event TikTok tidak mengubah gameplay. Mode **Pengaturan** dapat dibuka tanpa LIVE; mode ini tidak memulihkan pertandingan dan tidak menghubungkan listener.
 
 Koneksi WebSocket browser memakai `ws://` pada HTTP lokal dan `wss://` pada HTTPS. Endpoint dibagikan oleh Game Hub; game tidak membuat koneksi listener kedua.
 
@@ -102,7 +102,7 @@ Tab **Animasi** menerima video MP4 atau WebM hingga 100 MB. Satu video disimpan 
 | Mode coin | Knight 1, Mage 5, Beast 15, Boss 100 coin |
 | Mapping gift | Kosong; dipilih terpisah untuk tiap unit dan tim |
 
-State pertandingan tetap disimpan pada `localStorage` key `game-state:faction-war`. Troop, HP, wilayah, skor, ronde, antrean spawn, tim viewer, saldo coin, dan sisa like disimpan berkala dan saat halaman ditutup. Refresh halaman melanjutkan state game. Saat Game Hub memulai sesi TikTok baru, `shared/game-session.js` menghapus key `game-state:*` untuk semua game; database pengaturan tidak ikut dihapus.
+State pertandingan disimpan pada `localStorage` key `game-state:<listener-session>:faction-war`. Troop, HP, wilayah, skor, ronde, antrean spawn, tim viewer, saldo coin, dan sisa like disimpan berkala dan saat halaman ditutup. Refresh halaman melanjutkan state game. Saat akun pada satu listener session diganti, hanya state game milik session itu yang direset; session streamer lain dan database pengaturan tidak ikut dihapus.
 
 Reset game menghentikan koneksi event game, membersihkan troop dan skor, mengosongkan afiliasi/saldo/like viewer, serta menghentikan audio. Pengaturan tidak ikut di-reset.
 
