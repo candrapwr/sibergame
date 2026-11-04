@@ -24,12 +24,16 @@ const ROOT = __dirname;
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT) || 8050;
 const STATUS_IN_PROGRESS = new Set(["room_lookup", "connecting", "disconnecting"]);
+const MAX_ANIMATION_VIDEO_BYTES = 100 * 1024 * 1024;
+const ANIMATION_VIDEO_EXTENSIONS = new Set([".mp4", ".webm"]);
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
   ".ogg": "audio/ogg",
   ".wav": "audio/wav",
   ".png": "image/png",
@@ -182,9 +186,164 @@ async function handleGameSettingsRequest(request, response, gameId) {
   }
 }
 
+function animationVideoDirectory() {
+  return path.join(ROOT, "games", "faction-war", "data", "videos");
+}
+
+function animationVideoFilename(username, extension) {
+  return `${cleanUsername(username).toLowerCase()}${extension}`;
+}
+
+async function listAnimationVideos(usernameFilter = "") {
+  const directory = animationVideoDirectory();
+  await fs.promises.mkdir(directory, { recursive: true });
+  const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+  const videos = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const extension = path.extname(entry.name).toLowerCase();
+    if (!ANIMATION_VIDEO_EXTENSIONS.has(extension)) continue;
+    const username = path.basename(entry.name, extension);
+    try { cleanUsername(username); }
+    catch { continue; }
+    if (usernameFilter && username.toLowerCase() !== usernameFilter.toLowerCase()) continue;
+    const info = await fs.promises.stat(path.join(directory, entry.name));
+    videos.push({
+      username,
+      filename: entry.name,
+      url: `/games/faction-war/data/videos/${encodeURIComponent(entry.name)}`,
+      size: info.size,
+      updatedAt: info.mtime.toISOString()
+    });
+  }
+  return videos.sort((a, b) => a.username.localeCompare(b.username));
+}
+
+async function writeAnimationUpload(request, tempPath) {
+  const handle = await fs.promises.open(tempPath, "wx", 0o600);
+  let size = 0;
+  let tooLarge = false;
+  try {
+    for await (const chunk of request) {
+      size += chunk.length;
+      if (size > MAX_ANIMATION_VIDEO_BYTES) {
+        tooLarge = true;
+        continue;
+      }
+      let offset = 0;
+      while (offset < chunk.length) {
+        const result = await handle.write(chunk, offset, chunk.length - offset, null);
+        offset += result.bytesWritten;
+      }
+    }
+    if (tooLarge) {
+      const error = new Error("Ukuran video maksimal 100 MB.");
+      error.statusCode = 413;
+      throw error;
+    }
+    if (!size) {
+      const error = new Error("File video kosong.");
+      error.statusCode = 400;
+      throw error;
+    }
+    await handle.sync();
+    return size;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function handleAnimationVideoRequest(request, response, requestUrl) {
+  if (request.method !== "GET" && request.method !== "POST" && request.method !== "DELETE") {
+    response.writeHead(405, { Allow: "GET, POST, DELETE" });
+    response.end("Method Not Allowed");
+    return;
+  }
+
+  try {
+    if (request.method === "GET") {
+      let usernameFilter = "";
+      if (requestUrl.searchParams.has("username")) {
+        try { usernameFilter = cleanUsername(requestUrl.searchParams.get("username")); }
+        catch (error) { return sendJson(response, 400, { error: error.message }); }
+      }
+      return sendJson(response, 200, { videos: await listAnimationVideos(usernameFilter) });
+    }
+
+    let username;
+    try { username = cleanUsername(requestUrl.searchParams.get("username")); }
+    catch (error) { return sendJson(response, 400, { error: error.message }); }
+    const directory = animationVideoDirectory();
+    await fs.promises.mkdir(directory, { recursive: true });
+    const candidates = [...ANIMATION_VIDEO_EXTENSIONS].map((extension) => path.join(directory, animationVideoFilename(username, extension)));
+
+    if (request.method === "DELETE") {
+      let removed = false;
+      for (const filePath of candidates) {
+        try { await fs.promises.unlink(filePath); removed = true; }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+      return removed
+        ? sendJson(response, 200, { deleted: true, username })
+        : sendJson(response, 404, { error: "Video animasi untuk username ini tidak ditemukan." });
+    }
+
+    const originalName = path.basename(String(requestUrl.searchParams.get("filename") || ""));
+    const extension = path.extname(originalName).toLowerCase();
+    if (!ANIMATION_VIDEO_EXTENSIONS.has(extension)) {
+      return sendJson(response, 415, { error: "Format video harus MP4 atau WebM." });
+    }
+    const contentType = String(request.headers["content-type"] || "").split(";")[0].toLowerCase();
+    const requiredType = MIME_TYPES[extension];
+    if (contentType && contentType !== requiredType && contentType !== "application/octet-stream") {
+      return sendJson(response, 415, { error: "Jenis file tidak cocok dengan format video." });
+    }
+    const declaredLength = Number(request.headers["content-length"] || 0);
+    if (declaredLength > MAX_ANIMATION_VIDEO_BYTES) {
+      request.resume();
+      return sendJson(response, 413, { error: "Ukuran video maksimal 100 MB." });
+    }
+
+    const tempPath = path.join(directory, `.upload-${randomUUID()}.tmp`);
+    let size;
+    try { size = await writeAnimationUpload(request, tempPath); }
+    catch (error) {
+      await fs.promises.rm(tempPath, { force: true });
+      return sendJson(response, error.statusCode || 400, { error: error.message || "Upload video gagal." });
+    }
+
+    const targetPath = path.join(directory, animationVideoFilename(username, extension));
+    try {
+      await fs.promises.rename(tempPath, targetPath);
+      for (const otherPath of candidates) {
+        if (otherPath === targetPath) continue;
+        try { await fs.promises.unlink(otherPath); }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true });
+      throw error;
+    }
+
+    return sendJson(response, 201, {
+      uploaded: true,
+      username: username.toLowerCase(),
+      filename: path.basename(targetPath),
+      url: `/games/faction-war/data/videos/${encodeURIComponent(path.basename(targetPath))}`,
+      size
+    });
+  } catch (error) {
+    console.error("Gagal mengelola video animasi Faction War:", error.message);
+    return sendJson(response, 500, { error: "Video animasi gagal diproses." });
+  }
+}
+
 async function handleRequest(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   if (requestUrl.pathname.startsWith("/api/")) {
+    if (requestUrl.pathname === "/api/games/faction-war/animation-videos") {
+      return handleAnimationVideoRequest(request, response, requestUrl);
+    }
     const gameSettingsMatch = requestUrl.pathname.match(/^\/api\/games\/([a-z0-9]+(?:-[a-z0-9]+)*)\/settings$/);
     if (gameSettingsMatch) return handleGameSettingsRequest(request, response, gameSettingsMatch[1]);
     if (requestUrl.pathname === "/api/tiktok/status" && request.method === "GET") {
@@ -344,9 +503,38 @@ async function handleRequest(request, response) {
     const target = info.isDirectory() ? path.join(filePath, "index.html") : filePath;
     const targetInfo = await fs.promises.stat(target);
     if (!targetInfo.isFile()) throw new Error("Not a file");
+    const extension = path.extname(target).toLowerCase();
+    const contentType = MIME_TYPES[extension] || "application/octet-stream";
+    const isVideo = extension === ".mp4" || extension === ".webm";
+    const rangeHeader = request.headers.range;
+    if (isVideo && rangeHeader) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+      if (!match || (!match[1] && !match[2])) {
+        response.writeHead(416, { "Content-Range": `bytes */${targetInfo.size}` });
+        return response.end();
+      }
+      const start = match[1] ? Number(match[1]) : Math.max(0, targetInfo.size - Number(match[2]));
+      const end = match[2] && match[1] ? Number(match[2]) : targetInfo.size - 1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= targetInfo.size) {
+        response.writeHead(416, { "Content-Range": `bytes */${targetInfo.size}` });
+        return response.end();
+      }
+      response.writeHead(206, {
+        "Content-Type": contentType,
+        "Content-Length": end - start + 1,
+        "Content-Range": `bytes ${start}-${end}/${targetInfo.size}`,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache"
+      });
+      if (request.method === "HEAD") return response.end();
+      await pipeline(fs.createReadStream(target, { start, end }), response);
+      return;
+    }
+
     response.writeHead(200, {
-      "Content-Type": MIME_TYPES[path.extname(target).toLowerCase()] || "application/octet-stream",
+      "Content-Type": contentType,
       "Content-Length": targetInfo.size,
+      ...(isVideo ? { "Accept-Ranges": "bytes" } : {}),
       "Cache-Control": "no-cache"
     });
     if (request.method === "HEAD") return response.end();

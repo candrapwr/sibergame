@@ -89,6 +89,8 @@ Tombol **Pengaturan** di dashboard membuka jendela khusus untuk mengubah konfigu
 
 Saat pertama kali dibuka setelah pembaruan ini, pengaturan lama dari `localStorage` key `faction-war-ui-settings-v1` dipindahkan satu kali ke database untuk username yang dipilih, lalu key lama dihapus setelah migrasi berhasil. Pengaturan berikutnya hanya dibaca dan ditulis melalui API SQLite. Dialog menampilkan status **Menyimpan…** selama permintaan berlangsung dan pesan error jika server gagal menyimpan.
 
+Tab **Animasi** menerima video MP4 atau WebM hingga 100 MB. Satu video disimpan per username pada `games/faction-war/data/videos/<username>.<format>`; upload baru untuk username yang sama menggantikan file sebelumnya. Saat event gift dari username yang cocok diterima selama ronde, video itu ditampilkan menutupi arena selama 10 detik. Video diputar maksimal sekali per ronde; penandanya tersimpan saat refresh dan di-reset otomatis saat ronde baru dimulai setelah kemenangan. Tombol Reset game juga membuka sesi baru. Setelah refresh, game mencocokkan troop yang masih aktif supaya gift yang sudah memunculkan troop tetap dapat memicu videonya. MP3 adalah audio, bukan format video yang diterima.
+
 | Pengaturan | Default |
 | --- | --- |
 | Judul dan nama Red/Blue | Faction War, Red Team, Blue Team |

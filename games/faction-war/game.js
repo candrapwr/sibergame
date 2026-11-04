@@ -9,6 +9,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
   const settingsOnlyMode = window.factionWarSettingsOnly === true;
+  const animationVideoOverlay = document.getElementById("animation-video-overlay");
+  const animationVideoPlayer = document.getElementById("animation-video-player");
   const W = 1080;
   const H = 1920;
   const MID = W / 2;
@@ -209,6 +211,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     scoreRed: 0,
     scoreBlue: 0,
     gameStarted: false,
+    animationVideoPlayed: false,
     matchOver: false,
     winner: null,
     roundResetTimer: 0,
@@ -232,10 +235,15 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   let finishSound = null;
   let backgroundMusic = null;
   let backgroundMusicNeedsGesture = false;
+  let sessionAnimationVideoActive = false;
+  let sessionAnimationVideoTimer = 0;
+  let sessionAnimationVideoGeneration = 0;
+  let sessionAnimationVideoLookupQueue = Promise.resolve();
+  const sessionAnimationVideoLookups = new Set();
   let lastAttackSoundAt = 0;
 
   function playTroopSound(troop, action) {
-    if (!uiSettings.soundEnabled || !state.gameStarted || state.matchOver || typeof Audio === "undefined") return;
+    if (sessionAnimationVideoActive || !uiSettings.soundEnabled || !state.gameStarted || state.matchOver || typeof Audio === "undefined") return;
     const type = troop.isBoss ? "boss" : troop.type;
     const soundFile = TROOP_SOUND_FILES[type]?.[action];
     if (!soundFile) return;
@@ -276,7 +284,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function playFinishSound() {
-    if (!uiSettings.soundEnabled || typeof Audio === "undefined") return;
+    if (sessionAnimationVideoActive || !uiSettings.soundEnabled || typeof Audio === "undefined") return;
     if (!finishSound) {
       finishSound = new Audio("assets/audio/finish.wav");
       finishSound.preload = "auto";
@@ -306,7 +314,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function startBackgroundMusic() {
-    if (!uiSettings.bgMusicEnabled || !state.gameStarted || typeof Audio === "undefined") return;
+    if (sessionAnimationVideoActive || !uiSettings.bgMusicEnabled || !state.gameStarted || typeof Audio === "undefined") return;
     if (!backgroundMusic) {
       backgroundMusic = new Audio("assets/audio/bg1.mp3");
       backgroundMusic.loop = true;
@@ -329,6 +337,100 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     if (!backgroundMusic) return;
     backgroundMusic.pause();
     backgroundMusic.currentTime = 0;
+  }
+
+  function stopSessionAnimationVideo(resumeMusic = true) {
+    sessionAnimationVideoGeneration += 1;
+    if (sessionAnimationVideoTimer) window.clearTimeout(sessionAnimationVideoTimer);
+    sessionAnimationVideoTimer = 0;
+    animationVideoPlayer.pause();
+    animationVideoPlayer.removeAttribute("src");
+    animationVideoPlayer.load();
+    animationVideoOverlay.hidden = true;
+    sessionAnimationVideoActive = false;
+    if (resumeMusic && state.gameStarted && !state.matchOver && uiSettings.bgMusicEnabled) startBackgroundMusic();
+    requestRender();
+  }
+
+  function playSessionAnimationVideo(usernameValue, knownVideo = null) {
+    const username = String(usernameValue || "").trim().replace(/^@+/, "");
+    const usernameKey = username.toLowerCase();
+    const sessionToken = sessionAnimationVideoGeneration;
+    const lookupKey = `${sessionToken}:${usernameKey}`;
+    if (!/^[a-zA-Z0-9._]{1,50}$/.test(username)
+      || settingsOnlyMode
+      || !state.gameStarted
+      || state.matchOver
+      || state.animationVideoPlayed
+      || sessionAnimationVideoLookups.has(lookupKey)) return;
+
+    sessionAnimationVideoLookups.add(lookupKey);
+    const checkAndPlay = async () => {
+      let playbackGeneration = 0;
+      try {
+        if (sessionToken !== sessionAnimationVideoGeneration || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
+        let matchingVideo = knownVideo;
+        if (!matchingVideo) {
+          const listUrl = new URL("/api/games/faction-war/animation-videos", window.location.origin);
+          listUrl.searchParams.set("username", username);
+          const response = await fetch(listUrl.pathname + listUrl.search, { cache: "no-store" });
+          const result = await response.json().catch(() => ({}));
+          if (sessionToken !== sessionAnimationVideoGeneration || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
+          if (!response.ok || !Array.isArray(result.videos)) return;
+          matchingVideo = result.videos.find((video) => String(video.username || "").toLowerCase() === usernameKey);
+        }
+        if (!matchingVideo?.url) return;
+        const videoUrl = new URL(matchingVideo.url, window.location.origin);
+        if (videoUrl.origin !== window.location.origin) return;
+
+        state.animationVideoPlayed = true;
+        saveGameState();
+        playbackGeneration = ++sessionAnimationVideoGeneration;
+        stopTroopSounds();
+        stopFinishSound();
+        stopBackgroundMusic();
+        animationVideoPlayer.muted = false;
+        animationVideoPlayer.loop = false;
+        animationVideoPlayer.src = videoUrl.href;
+        animationVideoOverlay.hidden = false;
+        sessionAnimationVideoActive = true;
+        try { await animationVideoPlayer.play(); }
+        catch {
+          if (playbackGeneration !== sessionAnimationVideoGeneration) return;
+          animationVideoPlayer.muted = true;
+          await animationVideoPlayer.play();
+        }
+        if (playbackGeneration !== sessionAnimationVideoGeneration || !state.gameStarted) return;
+        sessionAnimationVideoTimer = window.setTimeout(() => stopSessionAnimationVideo(), 10000);
+      } catch {
+        if (playbackGeneration && playbackGeneration === sessionAnimationVideoGeneration) {
+          stopSessionAnimationVideo();
+        } else if (!state.animationVideoPlayed && sessionToken === sessionAnimationVideoGeneration) {
+          console.warn(`Video animasi untuk @${username} gagal dimuat.`);
+        }
+      } finally {
+        sessionAnimationVideoLookups.delete(lookupKey);
+      }
+    };
+    sessionAnimationVideoLookupQueue = sessionAnimationVideoLookupQueue.then(checkAndPlay, checkAndPlay);
+  }
+
+  async function checkRestoredTroopAnimationVideo() {
+    if (!state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
+    const activeUsernames = new Set(state.troops
+      .filter((troop) => !troop.dead && troop.status !== "dying")
+      .map((troop) => String(troop.username || "").trim().replace(/^@+/, "").toLowerCase())
+      .filter((username) => /^[a-z0-9._]{1,50}$/.test(username)));
+    if (!activeUsernames.size) return;
+    try {
+      const response = await fetch("/api/games/faction-war/animation-videos", { cache: "no-store" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(result.videos) || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
+      const matchingVideo = result.videos.find((video) => activeUsernames.has(String(video.username || "").toLowerCase()));
+      if (matchingVideo) playSessionAnimationVideo(matchingVideo.username, matchingVideo);
+    } catch {
+      // A later matching gift will retry the username lookup.
+    }
   }
 
   const TEAM = {
@@ -1245,6 +1347,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function resetRound() {
+    stopSessionAnimationVideo(false);
     stopTroopSounds();
     stopFinishSound();
     if (state.resetCall) {
@@ -1258,11 +1361,13 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     state.effects = [];
     state.labels = [];
     resetGiftSession();
+    state.animationVideoPlayed = false;
     state.matchOver = false;
     state.winner = null;
     state.roundResetTimer = 0;
     state.territoryRed = TERRITORY_MAX_HP / 2;
     state.territoryBlue = TERRITORY_MAX_HP / 2;
+    startBackgroundMusic();
     updateTerritoryBar();
     updateGameControls();
     pushFeed("RED", "Arena", `Round ${state.scoreRed + state.scoreBlue + 1} begins!`);
@@ -1304,6 +1409,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function resetGame() {
+    stopSessionAnimationVideo(false);
     stopTroopSounds();
     stopFinishSound();
     stopBackgroundMusic();
@@ -1331,6 +1437,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     state.scoreRed = 0;
     state.scoreBlue = 0;
     state.gameStarted = false;
+    state.animationVideoPlayed = false;
     tiktokConnector.disconnect();
     stopAmbientAnimations();
     state.matchOver = false;
@@ -1739,6 +1846,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     if (event.type === "gift") {
       const giftName = String(event.giftName || "Gift");
       const username = String(event.username || "TikTok User");
+      playSessionAnimationVideo(username);
       if (uiSettings.giftMode === "gift" && giftCatalogReady) {
         const giftId = String(event.giftId || "").trim().toLowerCase();
         const normalizedGiftName = giftName.trim().toLowerCase();
@@ -1896,6 +2004,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     const snapshot = {
       version: 1,
       gameStarted: state.gameStarted,
+      animationVideoPlayed: state.animationVideoPlayed,
       territoryRed: state.territoryRed,
       territoryBlue: state.territoryBlue,
       scoreRed: state.scoreRed,
@@ -1975,6 +2084,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     const winner = saved.winner === "RED" || saved.winner === "BLUE" ? saved.winner : null;
     // Saves made before the start button existed represent an already running game.
     state.gameStarted = saved.gameStarted !== false;
+    state.animationVideoPlayed = saved.animationVideoPlayed === true;
     state.matchOver = saved.matchOver === true && Boolean(winner);
     state.winner = state.matchOver ? winner : null;
     state.territoryRed = redRatio * TERRITORY_MAX_HP;
@@ -2140,7 +2250,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
       state.saveAccumulator = 0;
       saveGameState();
     }
-    render();
+    if (!sessionAnimationVideoActive) render();
     renderDirty = false;
     requestRender();
   }
@@ -2218,6 +2328,13 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   const settingsSaveStatus = document.getElementById("settings-save-status");
   const settingsSaveStatusText = document.getElementById("settings-save-status-text");
   const settingsSaveButton = document.getElementById("settings-save-button");
+  const animationVideoUsernameInput = document.getElementById("animation-video-username");
+  const animationVideoFileInput = document.getElementById("animation-video-file");
+  const animationVideoUploadButton = document.getElementById("animation-video-upload");
+  const animationVideoStatus = document.getElementById("animation-video-status");
+  const animationVideoList = document.getElementById("animation-video-list");
+  const animationVideoCount = document.getElementById("animation-video-count");
+  let animationVideosLoaded = false;
   const giftPickerDialog = document.getElementById("gift-picker-dialog");
   const giftPickerTitle = document.getElementById("gift-picker-title");
   const giftPickerSearch = document.getElementById("gift-picker-search");
@@ -2325,7 +2442,144 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
       settingsPanels.forEach((panel) => {
         panel.hidden = panel.dataset.settingsPanel !== selectedTab;
       });
+      if (selectedTab === "animation") loadAnimationVideos();
     });
+  });
+
+  const setAnimationVideoStatus = (stateName, message) => {
+    animationVideoStatus.dataset.state = stateName;
+    animationVideoStatus.textContent = message;
+    animationVideoStatus.hidden = !message;
+  };
+  const formatAnimationVideoSize = (bytes) => {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size < 0) return "Ukuran tidak diketahui";
+    return size < 1024 * 1024
+      ? `${Math.max(1, Math.round(size / 1024))} KB`
+      : `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  async function loadAnimationVideos(force = false) {
+    if (animationVideosLoaded && !force) return;
+    animationVideoList.replaceChildren();
+    animationVideoCount.textContent = "Memuat…";
+    const loading = document.createElement("p");
+    loading.className = "animation-video-empty";
+    loading.textContent = "Memuat daftar video…";
+    animationVideoList.append(loading);
+    try {
+      const response = await fetch("/api/games/faction-war/animation-videos", { cache: "no-store" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Daftar video gagal dimuat.");
+      const videos = Array.isArray(result.videos) ? result.videos : [];
+      animationVideosLoaded = true;
+      animationVideoCount.textContent = `${videos.length} video`;
+      animationVideoList.replaceChildren();
+      if (!videos.length) {
+        const empty = document.createElement("p");
+        empty.className = "animation-video-empty";
+        empty.textContent = "Belum ada video yang diupload.";
+        animationVideoList.append(empty);
+        return;
+      }
+
+      videos.forEach((video) => {
+        const row = document.createElement("div");
+        row.className = "animation-video-row";
+        const copy = document.createElement("span");
+        copy.className = "animation-video-row-copy";
+        const username = document.createElement("strong");
+        username.textContent = `@${video.username}`;
+        const filename = document.createElement("small");
+        filename.textContent = `${video.filename} · ${formatAnimationVideoSize(video.size)}`;
+        copy.append(username, filename);
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "animation-video-delete";
+        removeButton.textContent = "Hapus";
+        removeButton.setAttribute("aria-label", `Hapus video untuk @${video.username}`);
+        removeButton.addEventListener("click", async () => {
+          removeButton.disabled = true;
+          setAnimationVideoStatus("loading", `Menghapus video @${video.username}…`);
+          try {
+            const deleteUrl = new URL("/api/games/faction-war/animation-videos", window.location.origin);
+            deleteUrl.searchParams.set("username", video.username);
+            const deleteResponse = await fetch(`${deleteUrl.pathname}${deleteUrl.search}`, { method: "DELETE" });
+            const deleteResult = await deleteResponse.json().catch(() => ({}));
+            if (!deleteResponse.ok) throw new Error(deleteResult.error || "Video gagal dihapus.");
+            animationVideosLoaded = false;
+            setAnimationVideoStatus("success", `Video @${video.username} dihapus.`);
+            await loadAnimationVideos(true);
+          } catch (error) {
+            setAnimationVideoStatus("error", error.message || "Video gagal dihapus.");
+            removeButton.disabled = false;
+          }
+        });
+        row.append(copy, removeButton);
+        animationVideoList.append(row);
+      });
+    } catch (error) {
+      animationVideosLoaded = false;
+      animationVideoCount.textContent = "Gagal memuat";
+      animationVideoList.replaceChildren();
+      const failed = document.createElement("p");
+      failed.className = "animation-video-empty";
+      failed.textContent = error.message || "Daftar video gagal dimuat.";
+      animationVideoList.append(failed);
+    }
+  }
+  animationVideoUploadButton.addEventListener("click", async () => {
+    const username = animationVideoUsernameInput.value.trim().replace(/^@+/, "");
+    const file = animationVideoFileInput.files?.[0];
+    if (!/^[a-zA-Z0-9._]{1,50}$/.test(username)) {
+      setAnimationVideoStatus("error", "Masukkan username TikTok yang valid.");
+      animationVideoUsernameInput.focus();
+      return;
+    }
+    if (!file) {
+      setAnimationVideoStatus("error", "Pilih file video MP4 atau WebM.");
+      animationVideoFileInput.focus();
+      return;
+    }
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (!new Set(["mp4", "webm"]).has(extension)) {
+      setAnimationVideoStatus("error", "Format video harus MP4 atau WebM.");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setAnimationVideoStatus("error", "Ukuran video maksimal 100 MB.");
+      return;
+    }
+
+    const originalLabel = animationVideoUploadButton.textContent;
+    animationVideoUploadButton.disabled = true;
+    animationVideoUsernameInput.disabled = true;
+    animationVideoFileInput.disabled = true;
+    animationVideoUploadButton.textContent = "Mengunggah…";
+    setAnimationVideoStatus("loading", `Mengupload video untuk @${username}…`);
+    try {
+      const uploadUrl = new URL("/api/games/faction-war/animation-videos", window.location.origin);
+      uploadUrl.searchParams.set("username", username);
+      uploadUrl.searchParams.set("filename", file.name);
+      const contentType = file.type || (extension === "mp4" ? "video/mp4" : "video/webm");
+      const response = await fetch(`${uploadUrl.pathname}${uploadUrl.search}`, {
+        method: "POST",
+        headers: { "Content-Type": contentType },
+        body: file
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Upload video gagal.");
+      animationVideoFileInput.value = "";
+      animationVideosLoaded = false;
+      setAnimationVideoStatus("success", `Video ${result.filename} tersimpan untuk @${result.username}.`);
+      await loadAnimationVideos(true);
+    } catch (error) {
+      setAnimationVideoStatus("error", error.message || "Upload video gagal.");
+    } finally {
+      animationVideoUploadButton.disabled = false;
+      animationVideoUsernameInput.disabled = false;
+      animationVideoFileInput.disabled = false;
+      animationVideoUploadButton.textContent = originalLabel;
+    }
   });
 
   const syncGiftModePanels = (mode) => {
@@ -2553,6 +2807,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     likesPerTroopInput.value = uiSettings.likesPerTroop;
     fillGiftSettingsForm();
     settingsDialog.showModal();
+    if (document.querySelector('[data-settings-tab].active')?.dataset.settingsTab === "animation") loadAnimationVideos(true);
     gameTitleInput.focus();
   };
   document.getElementById("settings-button").addEventListener("click", openSettingsPanel);
@@ -2705,7 +2960,10 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   };
 
   if (!gsap) console.info("GSAP tidak tersedia; animasi dasar tetap berjalan. Pastikan koneksi internet aktif untuk memuat GSAP CDN.");
-  if (!settingsOnlyMode) restoreGameState();
+  if (!settingsOnlyMode) {
+    restoreGameState();
+    void checkRestoredTroopAnimationVideo();
+  }
   if (!settingsOnlyMode && pendingGiftSpawns.length && !state.matchOver) processNextGiftSpawn();
   if (state.gameStarted) {
     startAmbientAnimations();

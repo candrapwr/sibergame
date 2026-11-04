@@ -14,6 +14,9 @@
     <main class="app-shell">
       <section class="stage" aria-label="Arena Faction War">
         <canvas id="game-canvas" width="1080" height="1920" aria-label="Pertempuran Faction War"></canvas>
+        <div class="animation-video-overlay" id="animation-video-overlay" hidden aria-hidden="true">
+          <video id="animation-video-player" playsinline preload="metadata"></video>
+        </div>
         <div class="bottom-base" role="group" aria-label="Kontrol game">
           <div class="bottom-base-inner">
             <div class="team-picker" role="group" aria-label="Pilih tim troop">
@@ -76,6 +79,7 @@
           <nav class="settings-tabs" role="tablist" aria-label="Kategori pengaturan">
             <button class="settings-tab active" id="tab-general" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-settings-tab="general">General</button>
             <button class="settings-tab" id="tab-gift" type="button" role="tab" aria-selected="false" aria-controls="panel-gift" data-settings-tab="gift">Gift</button>
+            <button class="settings-tab" id="tab-animation" type="button" role="tab" aria-selected="false" aria-controls="panel-animation" data-settings-tab="animation">Animasi</button>
           </nav>
 
           <section class="settings-tab-panel" id="panel-general" role="tabpanel" aria-labelledby="tab-general" data-settings-panel="general">
@@ -179,6 +183,26 @@
                 <div class="gift-mapping-row"><span class="gift-unit-name"><img src="assets/images/boss_red_golem_front.png" alt="" /><b>Boss</b></span><input type="hidden" data-gift-assignment="boss:RED" /><button class="gift-assignment-button" type="button" data-open-gift-picker="boss:RED" aria-label="Pilih gift Boss untuk Red Team"><img data-selected-gift-icon="boss:RED" alt="" hidden /><span><b data-selected-gift-name="boss:RED">Pilih gift</b><small data-selected-gift-price="boss:RED"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button><input type="hidden" data-gift-assignment="boss:BLUE" /><button class="gift-assignment-button" type="button" data-open-gift-picker="boss:BLUE" aria-label="Pilih gift Boss untuk Blue Team"><img data-selected-gift-icon="boss:BLUE" alt="" hidden /><span><b data-selected-gift-name="boss:BLUE">Pilih gift</b><small data-selected-gift-price="boss:BLUE"></small></span><span class="gift-assignment-search" aria-hidden="true">⌕</span></button></div>
               </div>
             </div>
+          </section>
+
+          <section class="settings-tab-panel animation-settings-panel" id="panel-animation" role="tabpanel" aria-labelledby="tab-animation" data-settings-panel="animation" hidden>
+            <p class="animation-video-note">Video tampil menutupi seluruh arena selama 10 detik saat pengirim dengan username yang cocok memberi gift. Video diputar sekali per ronde dan jatahnya direset setiap ronde baru dimulai setelah kemenangan. Format MP4/WebM, maksimal 100 MB; upload baru untuk username yang sama akan menggantikan video sebelumnya.</p>
+            <div class="animation-video-upload-grid">
+              <label class="settings-field">
+                <span>Username pengirim gift</span>
+                <input id="animation-video-username" type="text" maxlength="50" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="username pengirim gift" />
+              </label>
+              <label class="settings-field">
+                <span>File video</span>
+                <input id="animation-video-file" type="file" accept="video/mp4,video/webm,.mp4,.webm" />
+              </label>
+            </div>
+            <div class="animation-video-upload-actions">
+              <button class="settings-save" id="animation-video-upload" type="button">Upload video</button>
+              <p class="animation-video-status" id="animation-video-status" role="status" aria-live="polite" hidden></p>
+            </div>
+            <div class="animation-video-list-heading"><strong>Video tersimpan</strong><span id="animation-video-count">0 video</span></div>
+            <div class="animation-video-list" id="animation-video-list" aria-live="polite"></div>
           </section>
 
           <footer class="settings-actions">
