@@ -21,7 +21,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const W = 1080;
   const H = 1920;
   const MID = W / 2;
-  const TERRITORY_HP_MULTIPLIER = 3;
+  const TERRITORY_HP_MULTIPLIER = 25;
   const TERRITORY_MAX_HP = 100 * TERRITORY_HP_MULTIPLIER;
   const TERRITORY_BAR_X = 145;
   const TERRITORY_BAR_WIDTH = 790;
@@ -53,8 +53,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const SAVE_INTERVAL = 3;
   const GAME_FRAME_INTERVAL = 1000 / 30;
   const GIFT_SPAWN_INTERVAL_MS = 220;
-  const TROOP_ATTACK_COOLDOWN = 1.8;
-  const BOSS_ATTACK_COOLDOWN = 2.6;
+  const TROOP_ATTACK_COOLDOWN = 0.8;
+  const BOSS_ATTACK_COOLDOWN = 1.6;
   const AVATAR_RADIUS = 52;
   const AVATAR_HEAD_GAP = 6;
   const TROOP_WIDTH = 160;
@@ -164,6 +164,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     frontline: { x: MID },
     scoreRed: 0,
     scoreBlue: 0,
+    troopHpCapacity: { RED: 0, BLUE: 0 },
     gameStarted: false,
     animationVideoPlayed: false,
     matchOver: false,
@@ -378,6 +379,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.troops = [];
     state.effects = [];
     state.labels = [];
+    state.troopHpCapacity = { RED: 0, BLUE: 0 };
     resetGiftSession();
     state.animationVideoPlayed = false;
     state.matchOver = false;
@@ -447,6 +449,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.effects = [];
     state.labels = [];
     state.feed = [];
+    state.troopHpCapacity = { RED: 0, BLUE: 0 };
     resetGiftSession();
     state.territoryRed = TERRITORY_MAX_HP / 2;
     state.territoryBlue = TERRITORY_MAX_HP / 2;
@@ -627,6 +630,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     troop.moveSpeed = (isBoss ? 58 : 108) * troop.speed;
     const movementDuration = Math.max(.25, Math.abs(targetX - spawnX) / troop.moveSpeed);
     state.troops.push(troop);
+    state.troopHpCapacity[team] += maxHp;
     state.spawnCount += 1;
     audio.playTroopSound(troop, "spawn");
     const title = isBoss ? "Golem Boss" : TROOP_NAMES[safeType];
@@ -1027,6 +1031,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       territoryBlue: state.territoryBlue,
       scoreRed: state.scoreRed,
       scoreBlue: state.scoreBlue,
+      troopHpCapacity: state.troopHpCapacity,
       matchOver: state.matchOver,
       winner: state.winner,
       roundResetTimer: state.roundResetTimer,
@@ -1209,6 +1214,14 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       });
       return troops;
     }, []) : [];
+    const troopHpCapacityFromUnits = state.troops.reduce((totals, troop) => {
+      totals[troop.team] += troop.maxHp;
+      return totals;
+    }, { RED: 0, BLUE: 0 });
+    state.troopHpCapacity = {
+      RED: Math.max(troopHpCapacityFromUnits.RED, Math.max(0, readNumber(saved.troopHpCapacity?.RED, 0))),
+      BLUE: Math.max(troopHpCapacityFromUnits.BLUE, Math.max(0, readNumber(saved.troopHpCapacity?.BLUE, 0)))
+    };
 
     if (state.troops.length) {
       state.nextId = Math.max(state.nextId, ...state.troops.map((troop) => troop.id + 1));

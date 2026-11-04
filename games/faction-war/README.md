@@ -29,7 +29,7 @@ Koneksi WebSocket browser memakai `ws://` pada HTTP lokal dan `wss://` pada HTTP
 
 - Koordinat dasar canvas adalah `W = 1080`, `H = 1920`.
 - Layout arena dapat melebar pada viewport landscape. Sprite dan teks tetap mempertahankan proporsi aslinya.
-- Header stream diringkas ke judul, persentase wilayah, dan nama tim; skor ditampilkan saat hasil ronde. Sprite kastil, troop, avatar, nameplate, health bar, dan legenda gift memakai skala yang lebih besar agar mudah terbaca di OBS.
+- Header stream menampilkan judul, persentase wilayah, HP gabungan troop tiap tim, dan nama tim; skor ditampilkan saat hasil ronde. Bar HP menjumlahkan HP troop yang masih hidup terhadap kapasitas HP seluruh troop yang sudah dipanggil di ronde itu. Sprite kastil, troop, avatar, nameplate, health bar, dan legenda gift memakai skala yang lebih besar agar mudah terbaca di OBS.
 - Ketika game aktif, simulasi berjalan sekitar 30 frame per detik. State disimpan setiap 3 detik.
 - Saat game belum mulai, canvas hanya dirender ketika tampilan perlu diperbarui; tidak ada loop simulasi yang terus berjalan.
 - GSAP menggerakkan tween dan efek ambient. Jika CDN tidak tersedia atau pengguna memilih reduced motion, animasi dasar tetap ditangani oleh loop game.

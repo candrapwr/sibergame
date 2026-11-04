@@ -53,6 +53,7 @@ export function createFactionWarRenderer({
   const avatarImageCache = new Map();
   const giftIconCache = new Map();
   const giftPairCanvasCache = new Map();
+  const hpNumberFormatter = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
   const assetEntries = Object.entries(imageFiles);
   let settledAssets = 0;
   let failedAssets = 0;
@@ -488,6 +489,9 @@ export function createFactionWarRenderer({
     outlinedText(`${Math.round(territoryPercent("RED"))}%`, barX + 72, barY + barH / 2, 28, "#fff4e8", { align: "left", lineWidth: 6, shadow: "none" });
     outlinedText(`${Math.round(territoryPercent("BLUE"))}%`, barX + barW - 72, barY + barH / 2, 28, "#f1fcff", { align: "right", lineWidth: 6, shadow: "none" });
 
+    drawTeamTroopHealth("RED", 22);
+    drawTeamTroopHealth("BLUE", 728);
+
     image("baseRed", -10, 300, 470, 444, .98);
     image("baseBlue", 620, 297, 470, 457, .98);
     // Team ribbons sit above the castles so their artwork stays visible.
@@ -499,6 +503,52 @@ export function createFactionWarRenderer({
     const blueName = uiSettings.blueTeam.toUpperCase();
     outlinedText(redName, 208, 261, fitTextSize(redName, 39, 260), "#fff0e8", { stroke: "#301a2c", lineWidth: 9 });
     outlinedText(blueName, 872, 261, fitTextSize(blueName, 39, 260), "#e9fbff", { stroke: "#192648", lineWidth: 9 });
+  }
+
+  function drawTeamTroopHealth(team, x) {
+    const troops = state.troops.filter((troop) =>
+      troop.team === team && !troop.dead && troop.status !== "dying"
+    );
+    const currentHp = troops.reduce((total, troop) => total + Math.max(0, Number(troop.hp) || 0), 0);
+    const activeCapacity = troops.reduce((total, troop) => total + Math.max(0, Number(troop.maxHp) || 0), 0);
+    const totalCapacity = Math.max(activeCapacity, Number(state.troopHpCapacity?.[team]) || 0);
+    const ratio = totalCapacity > 0 ? clamp(currentHp / totalCapacity, 0, 1) : 0;
+    const width = 330;
+    const height = 30;
+    const y = 197;
+    const inset = 5;
+    const trackWidth = width - inset * 2;
+    const fillWidth = trackWidth * ratio;
+    const teamColor = TEAM[team].color;
+    roundRectFixed(x, y, width, height, 5, "rgba(13, 17, 31, .94)", `${teamColor}88`, 2);
+    ctx.save();
+    ctx.translate(x + width / 2, y);
+    ctx.scale(1 / layoutScaleX, 1);
+    ctx.fillStyle = "rgba(3, 7, 17, .68)";
+    ctx.fillRect(-width / 2 + inset, inset, trackWidth, height - inset * 2);
+    if (fillWidth > 0) {
+      const gradient = ctx.createLinearGradient(-width / 2, 0, width / 2, 0);
+      if (team === "RED") {
+        gradient.addColorStop(0, "#ff8a58");
+        gradient.addColorStop(1, "#e73d57");
+      } else {
+        gradient.addColorStop(0, "#287ee9");
+        gradient.addColorStop(1, "#5adfff");
+      }
+      ctx.fillStyle = gradient;
+      const fillX = team === "RED" ? -width / 2 + inset : width / 2 - inset - fillWidth;
+      ctx.fillRect(fillX, inset, fillWidth, height - inset * 2);
+    }
+    ctx.restore();
+
+    const label = `HP ${hpNumberFormatter.format(currentHp)} / ${hpNumberFormatter.format(totalCapacity)}`;
+    outlinedText(label, team === "RED" ? x + 12 : x + width - 12, y + height / 2, 28, "#ffffff", {
+      align: team === "RED" ? "left" : "right",
+      stroke: "#080b15",
+      lineWidth: 5,
+      shadow: "rgba(0,0,0,.55)",
+      weight: 1000
+    });
   }
 
   function drawBattlefieldTrim() {
