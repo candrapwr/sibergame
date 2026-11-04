@@ -8,6 +8,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   // shared TikTok event adapter both end up at this boundary.
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
+  const settingsOnlyMode = window.factionWarSettingsOnly === true;
   const W = 1080;
   const H = 1920;
   const MID = W / 2;
@@ -134,6 +135,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     }).filter((gift) => gift.id && gift.name)
     : [];
   const giftCatalogReady = window.tiktokGiftCatalogStatus === "ready" && giftCatalog.length > 0;
+  const giftCatalogSource = window.tiktokGiftCatalogSource || "none";
   const giftCatalogById = new Map(giftCatalog.map((gift) => [gift.id, gift]));
 
   function resizeGameCanvas() {
@@ -1281,7 +1283,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function startGame() {
-    if (state.gameStarted) return;
+    if (settingsOnlyMode || state.gameStarted) return;
     state.gameStarted = true;
     startBackgroundMusic();
     state.lastTime = 0;
@@ -1644,6 +1646,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function handleGameCommand(input) {
+    if (settingsOnlyMode) return false;
     const data = normalizeCommand(input);
     if (!data) {
       console.warn("Faction War: command tidak dikenal", input);
@@ -1889,6 +1892,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   }
 
   function saveGameState() {
+    if (settingsOnlyMode) return;
     const snapshot = {
       version: 1,
       gameStarted: state.gameStarted,
@@ -2143,7 +2147,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
 
   // The bottom dock is the compact local simulator. TikTok events still enter
   // through the same shared connector and are interpreted by this game.
-  tiktokConnector.subscribe(handleTikTokEvent);
+  if (!settingsOnlyMode) tiktokConnector.subscribe(handleTikTokEvent);
 
   let selectedSpawnTeam = "RED";
   const teamButtons = [...document.querySelectorAll("[data-select-team]")];
@@ -2348,8 +2352,12 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     }
     giftCatalogStatusMessage.dataset.state = giftCatalogReady ? "ready" : "failed";
     giftCatalogStatusMessage.textContent = giftCatalogReady
-      ? `Daftar siap: ${new Intl.NumberFormat("id-ID").format(giftCatalog.length)} gift tersedia untuk sesi LIVE ini.`
-      : "Daftar gift tidak berhasil dimuat. Mode berdasarkan gift tidak tersedia; mode coin tetap bisa digunakan.";
+      ? giftCatalogSource === "saved"
+        ? `Daftar siap: ${new Intl.NumberFormat("id-ID").format(giftCatalog.length)} gift dari unduhan terakhir akun ini.`
+        : `Daftar siap: ${new Intl.NumberFormat("id-ID").format(giftCatalog.length)} gift tersedia untuk sesi LIVE ini.`
+      : settingsOnlyMode
+        ? "Belum ada katalog gift tersimpan untuk akun ini. Hubungkan akun LIVE sekali agar daftar gift bisa diunduh untuk pengaturan offline."
+        : "Daftar gift tidak berhasil dimuat. Mode berdasarkan gift tidak tersedia; mode coin tetap bisa digunakan.";
   };
   const syncGiftMappingTeamTitles = () => {
     document.querySelectorAll("[data-gift-team-title]").forEach((label) => {
@@ -2516,12 +2524,14 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     syncGiftModePanels(giftModeOptions.find((option) => option.checked)?.value || "coin");
   };
 
-  document.getElementById("settings-button").addEventListener("click", () => {
+  const openSettingsPanel = () => {
     clearSettingsSaveStatus();
     const accountUsername = String(window.factionWarSettingsUsername || "").replace(/^@+/, "");
-    settingsDescription.textContent = accountUsername
-      ? `Pengaturan ini disimpan khusus untuk akun LIVE @${accountUsername}.`
-      : "Pengaturan disimpan berdasarkan username akun LIVE yang tersambung.";
+    settingsDescription.textContent = settingsOnlyMode
+      ? `Mode pengaturan untuk akun @${accountUsername}. Listener TikTok dan gameplay tidak dijalankan.`
+      : accountUsername
+        ? `Pengaturan ini disimpan khusus untuk akun LIVE @${accountUsername}.`
+        : "Pengaturan disimpan berdasarkan username akun LIVE yang tersambung.";
     if (window.factionWarSettingsLoadError) {
       setSettingsSaveStatus("error", `Gagal memuat setting: ${window.factionWarSettingsLoadError}`);
     }
@@ -2544,7 +2554,8 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     fillGiftSettingsForm();
     settingsDialog.showModal();
     gameTitleInput.focus();
-  });
+  };
+  document.getElementById("settings-button").addEventListener("click", openSettingsPanel);
   document.getElementById("settings-close").addEventListener("click", () => settingsDialog.close());
   document.getElementById("settings-cancel").addEventListener("click", () => settingsDialog.close());
   settingsDialog.addEventListener("cancel", (event) => {
@@ -2585,7 +2596,9 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
 
     setSettingsSaving(true);
     try {
-      const response = await fetch("/api/games/faction-war/settings", {
+      const saveUrl = new URL("/api/games/faction-war/settings", window.location.origin);
+      if (settingsOnlyMode) saveUrl.searchParams.set("username", window.factionWarSettingsUsername);
+      const response = await fetch(`${saveUrl.pathname}${saveUrl.search}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings: nextSettings })
@@ -2644,7 +2657,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   document.getElementById("cancel-leave").addEventListener("click", () => leaveDialog.close());
   document.getElementById("confirm-leave").addEventListener("click", () => {
     leaveDialog.close();
-    resetGame();
+    if (!settingsOnlyMode) resetGame();
     if (window.opener && !window.opener.closed) {
       window.close();
       if (!window.closed) window.location.assign("/");
@@ -2667,7 +2680,7 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
     if (event.target === resetDialog) resetDialog.close();
   });
   window.addEventListener("storage", (event) => {
-    if (event.key === GAME_RESET_EVENT_KEY && event.newValue) resetGame();
+    if (!settingsOnlyMode && event.key === GAME_RESET_EVENT_KEY && event.newValue) resetGame();
   });
 
   // Console helpers use the same central command handler as the dummy controls.
@@ -2683,20 +2696,22 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
 
   window.publishTikTokEvent = (event) => tiktokConnector.publish(event);
   window.connectTikTokListener = (endpoint) => {
-    if (!state.gameStarted) return false;
+    if (settingsOnlyMode || !state.gameStarted) return false;
     tiktokConnector.connect(endpoint);
     return true;
   };
-  window.disconnectTikTokListener = () => tiktokConnector.disconnect();
+  window.disconnectTikTokListener = () => {
+    if (!settingsOnlyMode) tiktokConnector.disconnect();
+  };
 
   if (!gsap) console.info("GSAP tidak tersedia; animasi dasar tetap berjalan. Pastikan koneksi internet aktif untuk memuat GSAP CDN.");
-  restoreGameState();
-  if (pendingGiftSpawns.length && !state.matchOver) processNextGiftSpawn();
+  if (!settingsOnlyMode) restoreGameState();
+  if (!settingsOnlyMode && pendingGiftSpawns.length && !state.matchOver) processNextGiftSpawn();
   if (state.gameStarted) {
     startAmbientAnimations();
     startBackgroundMusic();
     if (listenerEndpoint) tiktokConnector.connect(listenerEndpoint);
-  } else {
+  } else if (!settingsOnlyMode) {
     tiktokConnector.disconnect();
   }
   document.addEventListener("pointerdown", () => {
@@ -2707,5 +2722,12 @@ import { GAME_RESET_EVENT_KEY } from "../../shared/game-session.js";
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveGameState();
   });
+  if (settingsOnlyMode) {
+    document.getElementById("leave-dialog-title").textContent = "Keluar dari pengaturan?";
+    document.querySelector("#leave-dialog .reset-dialog-content > p").textContent = "Perubahan yang sudah disimpan tetap tersimpan. Sesi permainan tidak diubah.";
+    document.getElementById("cancel-leave").textContent = "Tetap di pengaturan";
+    document.getElementById("confirm-leave").textContent = "Keluar";
+    openSettingsPanel();
+  }
   requestRender();
 })();

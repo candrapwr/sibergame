@@ -309,6 +309,12 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 @keyframes settings-save-spin { to { transform: rotate(360deg); } }
 .settings-cancel { background: rgba(255,255,255,.06); }
 .settings-save { border-color: rgba(125,224,171,.4) !important; background: linear-gradient(135deg, #278d65, #236678); }
+body.settings-only-mode .bottom-base { transform: translateX(-50%) translateY(0) scale(var(--dock-scale)); opacity: 1; pointer-events: auto; }
+body.settings-only-mode .bottom-base-inner { justify-content: flex-end; }
+body.settings-only-mode .team-picker,
+body.settings-only-mode .dock-divider,
+body.settings-only-mode .troop-picker,
+body.settings-only-mode .match-actions > :not(.back) { display: none !important; }
 .reset-dialog { width: min(390px, calc(100vw - 28px)); max-width: none; margin: auto; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 0; background: #1b1e30; color: #f6f7ff; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
 .reset-dialog::backdrop { background: rgba(5,8,18,.7); backdrop-filter: blur(5px); }
 .reset-dialog-content { padding: 18px; }

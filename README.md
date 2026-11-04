@@ -41,7 +41,7 @@ npm install
 npm start
 ```
 
-`npm start` menjalankan server tanpa membuka tab browser otomatis. Buka Game Hub secara manual di `http://127.0.0.1:8050`. Port dapat diganti melalui environment variable `PORT`. Masukkan username akun TikTok yang sedang LIVE dan tunggu sampai status terhubung. Halaman game akan kembali ke hub untuk memulai koneksi jika dibuka langsung tanpa sesi listener yang aktif. Jika memang ingin server membuka browser, jalankan dengan `OPEN_BROWSER=true`.
+`npm start` menjalankan server tanpa membuka tab browser otomatis. Buka Game Hub secara manual di `http://127.0.0.1:8050`. Port dapat diganti melalui environment variable `PORT`. Masukkan username akun TikTok yang sedang LIVE dan tunggu sampai status terhubung. Dari layar koneksi, tombol **Pengaturan** membuka Faction War dalam mode konfigurasi saja; akun tidak harus sedang LIVE dan listener maupun sesi pertandingan tidak dijalankan. Halaman game biasa akan kembali ke hub untuk memulai koneksi jika dibuka langsung tanpa sesi listener yang aktif. Jika memang ingin server membuka browser, jalankan dengan `OPEN_BROWSER=true`.
 
 Untuk menjalankan proses dengan PM2, install PM2 pada server lalu jalankan `pm2 start ecosystem.config.cjs`. Konfigurasi tersebut memakai port `8050`, mengikat Node ke `127.0.0.1`, dan tidak membuka browser dari server. Di production, tempatkan reverse proxy/domain di depan port lokal ini.
 
@@ -52,7 +52,7 @@ Untuk menjalankan proses dengan PM2, install PM2 pada server lalu jalankan `pm2 
 3. Buat `boot.js` yang memanggil `requireConnectedTikTok()` dari `shared/tiktok/game-entry.js` sebelum mengimpor logika game.
 4. Import konektor bersama dari game: `../../shared/tiktok/tiktok-connector.js`.
 5. Subscribe ke event dan terjemahkan ke aksi khusus game itu sendiri. Aturan satu game tidak ditaruh di konektor bersama.
-6. Simpan state runtime dengan key `game-state:<nama-game>` agar state semua game dibersihkan otomatis saat sesi TikTok baru berhasil terhubung. Pengaturan game disimpan server-side melalui `/api/games/<nama-game>/settings` ke database `games/<nama-game>/data/settings.sqlite`, terpisah berdasarkan username LIVE.
+6. Simpan state runtime dengan key `game-state:<nama-game>` agar state semua game dibersihkan otomatis saat sesi TikTok baru berhasil terhubung. Pengaturan game disimpan server-side melalui `/api/games/<nama-game>/settings` ke database `games/<nama-game>/data/settings.sqlite`, terpisah berdasarkan username TikTok dan dapat diubah tanpa sesi LIVE melalui mode pengaturan.
 7. Buat `README.md` di folder game tersebut untuk menjelaskan mekanik, alur event, pengaturan, state, dan asset khusus game. Dokumentasi global tetap untuk hub dan sistem bersama.
 
 ## Dokumentasi game
@@ -81,4 +81,4 @@ Konektor hanya menangani transport dan format event umum. Setiap game menentukan
 
 ## Penyimpanan pengaturan
 
-Setiap game menyimpan pengaturan di file SQLite miliknya sendiri pada `games/<nama-game>/data/settings.sqlite`. Baris pengaturan dibedakan berdasarkan username akun LIVE yang sedang tersambung. File database dan file journal SQLite diabaikan Git. State runtime pertandingan tetap menggunakan `localStorage` per browser; pengaturan tidak.
+Setiap game menyimpan pengaturan di file SQLite miliknya sendiri pada `games/<nama-game>/data/settings.sqlite`. Baris pengaturan dibedakan berdasarkan username TikTok, termasuk ketika konfigurasi dibuka dalam mode offline. Game dapat menyimpan data pendukung seperti katalog gift di database yang sama. File database dan file journal SQLite diabaikan Git. State runtime pertandingan tetap menggunakan `localStorage` per browser; pengaturan tidak.

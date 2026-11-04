@@ -7,7 +7,12 @@ const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { WebSocket, WebSocketServer } = require("ws");
-const { getGameSettings, saveGameSettings } = require("./shared/game-settings-store");
+const {
+  getGameSettings,
+  saveGameSettings,
+  getGameGiftCatalog,
+  saveGameGiftCatalog
+} = require("./shared/game-settings-store");
 const {
   SiberLiveConnection,
   WebcastEvent,
@@ -138,13 +143,15 @@ async function handleGameSettingsRequest(request, response, gameId) {
     response.end("Method Not Allowed");
     return;
   }
-  if (status.status !== "connected" || !status.username) {
-    return sendJson(response, 409, { error: "Hubungkan akun TikTok LIVE sebelum memuat atau menyimpan pengaturan." });
-  }
-
   let username;
-  try { username = cleanUsername(status.username); }
-  catch { return sendJson(response, 409, { error: "Username akun LIVE yang tersambung tidak valid." }); }
+  const settingsUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  const hasRequestedUsername = settingsUrl.searchParams.has("username");
+  const requestedUsername = settingsUrl.searchParams.get("username");
+  try {
+    if (hasRequestedUsername) username = cleanUsername(requestedUsername);
+    else if (status.status === "connected" && status.username) username = cleanUsername(status.username);
+    else return sendJson(response, 400, { error: "Username TikTok diperlukan untuk membuka pengaturan saat tidak terhubung." });
+  } catch { return sendJson(response, 400, { error: "Username TikTok tidak valid." }); }
 
   try {
     if (request.method === "GET") {
@@ -184,13 +191,68 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, status);
     }
     if (requestUrl.pathname === "/api/tiktok/gifts" && request.method === "GET") {
-      const ready = status.status === "connected" && status.giftCatalogStatus === "ready";
+      const gameId = requestUrl.searchParams.get("game") || "faction-war";
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(gameId) || !fs.existsSync(path.join(ROOT, "games", gameId, "index.html"))) {
+        return sendJson(response, 404, { error: "Game tidak ditemukan." });
+      }
+
+      const hasRequestedUsername = requestUrl.searchParams.has("username");
+      let requestedUsername = "";
+      try {
+        if (hasRequestedUsername) requestedUsername = cleanUsername(requestUrl.searchParams.get("username"));
+      } catch (error) {
+        return sendJson(response, 400, { error: error.message });
+      }
+
+      let liveUsername = "";
+      try {
+        if (status.status === "connected" && status.username) liveUsername = cleanUsername(status.username);
+      } catch { /* Invalid listener state cannot be used for settings lookup. */ }
+      const liveCatalogReady = Boolean(liveUsername && status.giftCatalogStatus === "ready" && giftCatalog.length);
+      const requestedIsLiveAccount = !hasRequestedUsername
+        || requestedUsername.toLowerCase() === liveUsername.toLowerCase();
+
+      if (liveCatalogReady && requestedIsLiveAccount) {
+        try { saveGameGiftCatalog(ROOT, gameId, liveUsername, giftCatalog); }
+        catch (error) { console.error(`Gagal menyimpan katalog gift untuk game ${gameId}:`, error.message); }
+        return sendJson(response, 200, {
+          status: "ready",
+          source: "live",
+          username: liveUsername,
+          gameSessionId: status.gameSessionId || "",
+          giftCount: giftCatalog.length,
+          gifts: giftCatalog
+        });
+      }
+
+      const canUseSavedCatalog = hasRequestedUsername
+        && (!liveUsername || requestedUsername.toLowerCase() !== liveUsername.toLowerCase());
+      if (canUseSavedCatalog) {
+        try {
+          const cachedCatalog = getGameGiftCatalog(ROOT, gameId, requestedUsername);
+          if (cachedCatalog && Array.isArray(cachedCatalog.gifts) && cachedCatalog.gifts.length) {
+            return sendJson(response, 200, {
+              status: "ready",
+              source: "saved",
+              username: requestedUsername,
+              giftCount: cachedCatalog.gifts.length,
+              gifts: cachedCatalog.gifts,
+              updatedAt: cachedCatalog.updatedAt
+            });
+          }
+        } catch (error) {
+          console.error(`Gagal membaca katalog gift untuk game ${gameId}:`, error.message);
+          return sendJson(response, 500, { error: "Katalog gift tersimpan gagal dibaca." });
+        }
+      }
+
       return sendJson(response, 200, {
-        status: status.giftCatalogStatus || "unavailable",
-        username: status.username || "",
+        status: status.status === "connected" ? status.giftCatalogStatus || "unavailable" : "unavailable",
+        source: "none",
+        username: requestedUsername || liveUsername || "",
         gameSessionId: status.gameSessionId || "",
-        giftCount: status.giftCatalogCount || 0,
-        gifts: ready ? giftCatalog : []
+        giftCount: 0,
+        gifts: []
       });
     }
     if (requestUrl.pathname === "/api/tiktok/connect" && request.method === "POST") {
@@ -391,6 +453,10 @@ function startConnection(username) {
       await liveConnection.connect(roomId);
       if (connection !== liveConnection) return;
       giftCatalog = normalizeGiftCatalog(liveConnection.availableGifts);
+      if (giftCatalog.length) {
+        try { saveGameGiftCatalog(ROOT, "faction-war", liveConnection.uniqueId, giftCatalog); }
+        catch (error) { console.error("Gagal menyimpan katalog gift Faction War:", error.message); }
+      }
       status = {
         ...status,
         giftCatalogStatus: giftCatalog.length ? "ready" : "failed",

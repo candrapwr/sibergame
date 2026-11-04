@@ -28,6 +28,13 @@ function databaseFor(rootDir, gameId) {
       updated_at TEXT NOT NULL
     )
   `);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS gift_catalogs (
+      tiktok_username TEXT PRIMARY KEY,
+      catalog_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
   databases.set(databasePath, database);
   return database;
 }
@@ -61,4 +68,26 @@ function saveGameSettings(rootDir, gameId, username, settings) {
   return updatedAt;
 }
 
-module.exports = { getGameSettings, saveGameSettings };
+function getGameGiftCatalog(rootDir, gameId, username) {
+  const key = usernameKey(username);
+  const row = databaseFor(rootDir, gameId)
+    .prepare("SELECT catalog_json, updated_at FROM gift_catalogs WHERE tiktok_username = ?")
+    .get(key);
+  if (!row) return null;
+  return { gifts: JSON.parse(row.catalog_json), updatedAt: row.updated_at };
+}
+
+function saveGameGiftCatalog(rootDir, gameId, username, gifts) {
+  const key = usernameKey(username);
+  const updatedAt = new Date().toISOString();
+  databaseFor(rootDir, gameId).prepare(`
+    INSERT INTO gift_catalogs (tiktok_username, catalog_json, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(tiktok_username) DO UPDATE SET
+      catalog_json = excluded.catalog_json,
+      updated_at = excluded.updated_at
+  `).run(key, JSON.stringify(gifts), updatedAt);
+  return updatedAt;
+}
+
+module.exports = { getGameSettings, saveGameSettings, getGameGiftCatalog, saveGameGiftCatalog };

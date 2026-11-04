@@ -34,7 +34,7 @@
         <div class="connection-content">
           <p class="eyebrow">TIKTOK LIVE LISTENER</p>
           <h2 id="connection-title">Hubungkan akun LIVE</h2>
-          <p class="connection-copy" id="connection-copy">Masukkan username akun TikTok yang sedang live untuk mulai menghubungkan listener.</p>
+          <p class="connection-copy" id="connection-copy">Masukkan username TikTok untuk koneksi LIVE. Pengaturan game juga bisa dibuka saat akun sedang offline.</p>
 
           <form id="connection-form" class="connection-form">
             <label for="tiktok-username">Username TikTok</label>
@@ -42,6 +42,9 @@
               <span aria-hidden="true">@</span>
               <input id="tiktok-username" name="username" type="text" placeholder="username" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="50" required />
               <button id="connect-button" type="submit"><span>Hubungkan</span><span aria-hidden="true">↗</span></button>
+              <button class="configure-game-button" id="configure-game-button" type="button" aria-label="Buka pengaturan game" title="Buka pengaturan game">
+                <span aria-hidden="true">⚙</span><span class="configure-game-label">Pengaturan</span>
+              </button>
             </div>
             <p class="form-hint">Akun harus sedang melakukan siaran LIVE agar koneksi berhasil.</p>
           </form>
@@ -63,6 +66,7 @@
           <div class="connection-ready" id="connection-ready" hidden>
             <span class="ready-indicator" aria-hidden="true"></span>
             <span>Terhubung sebagai <strong id="connected-username"></strong></span>
+            <button class="connection-config-button" id="configure-game-connected-button" type="button">⚙ Pengaturan game</button>
             <button id="change-account-button" type="button">Ganti akun</button>
           </div>
         </div>
@@ -82,7 +86,7 @@
       <footer class="hub-footer" id="hub-footer">
         <div class="hub-footer-note">
           <span class="connection-dot" aria-hidden="true"></span>
-          <span>Game hanya dibuka setelah koneksi TikTok LIVE berhasil.</span>
+          <span>Gameplay memerlukan koneksi TikTok LIVE. Pengaturan game bisa dibuka kapan saja.</span>
         </div>
         <div class="hub-project-meta" aria-label="Informasi pengembang">
           <span>Pengembang <strong>DataSiberLab</strong></span>

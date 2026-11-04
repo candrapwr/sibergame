@@ -18,6 +18,36 @@ let pollTimer = null;
 const inProgressStates = new Set(["room_lookup", "connecting", "disconnecting"]);
 const stepOrder = ["account", "room", "socket"];
 
+function openGameSettings() {
+  const selectedUsername = panel.dataset.connectionState === "connected"
+    ? connectedUsername.dataset.username || usernameInput.value
+    : usernameInput.value;
+  const username = selectedUsername.trim().replace(/^@+/, "");
+  if (!/^[a-zA-Z0-9._]{1,50}$/.test(username)) {
+    errorMessage.textContent = "Masukkan username TikTok yang valid untuk membuka pengaturan akun tersebut.";
+    errorMessage.hidden = false;
+    usernameInput.focus();
+    return;
+  }
+
+  errorMessage.hidden = true;
+  const target = new URL("/games/faction-war/index.html", window.location.origin);
+  target.searchParams.set("settingsOnly", "1");
+  target.searchParams.set("username", username);
+  const width = window.screen.availWidth || 1440;
+  const height = window.screen.availHeight || 900;
+  const features = [
+    "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=no", "resizable=yes",
+    `width=${width}`, `height=${height}`, "left=0", "top=0"
+  ].join(",");
+  const gameWindow = window.open(target.href, `game-settings-faction-war-${username.toLowerCase()}`, features);
+  if (gameWindow) gameWindow.focus();
+  else window.location.assign(target.href);
+}
+
+document.getElementById("configure-game-button").addEventListener("click", openGameSettings);
+document.getElementById("configure-game-connected-button").addEventListener("click", openGameSettings);
+
 function setStepProgress(state) {
   const completedThrough = state === "room_lookup" ? 0
     : state === "connecting" ? 1
@@ -58,8 +88,8 @@ function render(state) {
   connectionCopy.textContent = connected
     ? "Listener siap. Semua game di hub akan menerima event dari siaran ini."
     : failed
-      ? "Koneksi belum berhasil. Periksa username dan pastikan akun sedang LIVE, lalu coba lagi."
-      : "Masukkan username akun TikTok yang sedang live untuk mulai menghubungkan listener.";
+      ? "Koneksi belum berhasil. Periksa username dan pastikan akun sedang LIVE, atau buka pengaturan game tanpa koneksi."
+      : "Masukkan username akun TikTok LIVE untuk bermain, atau buka pengaturan game meski akun sedang offline.";
   usernameInput.disabled = busy;
   connectButton.disabled = busy;
   connectButton.querySelector("span:first-child").textContent = busy ? "Menghubungkan…" : "Hubungkan";
@@ -73,6 +103,7 @@ function render(state) {
   errorMessage.textContent = state.error || "";
   errorMessage.hidden = !state.error;
   connectedUsername.textContent = state.username ? `@${String(state.username).replace(/^@+/, "")}` : "TikTok LIVE";
+  connectedUsername.dataset.username = String(state.username || "").replace(/^@+/, "");
   if (state.username && !usernameInput.value) usernameInput.value = String(state.username).replace(/^@+/, "");
   setStepProgress(connectionState);
 

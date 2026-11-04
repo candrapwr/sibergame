@@ -12,12 +12,12 @@ Faction War adalah game arena dua tim berbasis canvas. Troop muncul dari sisi ti
 | --- | --- |
 | `index.html` | Membuat canvas 1080 × 1920, kontrol bawah, dialog pengaturan, dan memuat GSAP dari CDN. |
 | `styles.css` | Layout fullscreen, kontrol, modal, serta tampilan responsif. |
-| `boot.js` | Memastikan listener LIVE terhubung, mengambil katalog gift, lalu memuat `game.js`. |
+| `boot.js` | Memeriksa mode main atau konfigurasi, memuat pengaturan dan katalog gift, lalu memuat `game.js`. |
 | `game.js` | State, canvas, simulasi pertempuran, event TikTok, pengaturan, audio, dan penyimpanan. |
 | `assets/images/` | Sprite kastil, troop, boss, ikon, dan VFX. |
 | `assets/audio/` | Efek suara troop, suara kemenangan, dan musik latar. Lihat [daftar audio dan sumber lisensinya](assets/audio/README.md). |
 
-Game dibuka melalui Game Hub setelah akun LIVE tersambung. `boot.js` mendapatkan endpoint `/tiktok` dari status koneksi dan meminta katalog melalui `/api/tiktok/gifts`. Katalog disiapkan sebelum `game.js` dimuat. Tombol **Mulai** mengaktifkan simulasi dan koneksi event untuk game ini. Selama belum dimulai atau ronde sudah selesai, event TikTok tidak mengubah gameplay.
+Mode bermain dibuka melalui Game Hub setelah akun LIVE tersambung. `boot.js` mendapatkan endpoint `/tiktok` dari status koneksi dan meminta katalog melalui `/api/tiktok/gifts`. Katalog disiapkan sebelum `game.js` dimuat. Tombol **Mulai** mengaktifkan simulasi dan koneksi event untuk game ini. Selama belum dimulai atau ronde sudah selesai, event TikTok tidak mengubah gameplay. Mode **Pengaturan** dapat dibuka tanpa LIVE; mode ini tidak memulihkan pertandingan dan tidak menghubungkan listener.
 
 Koneksi WebSocket browser memakai `ws://` pada HTTP lokal dan `wss://` pada HTTPS. Endpoint dibagikan oleh Game Hub; game tidak membuat koneksi listener kedua.
 
@@ -77,15 +77,17 @@ Spawn dari gift dimasukkan ke antrean dengan jeda 220 ms per unit agar combo tid
 
 ### Mode gift dan katalog
 
-Server mengunduh katalog saat koneksi LIVE dibuat dan menyediakannya sepanjang sesi melalui `/api/tiktok/gifts`. Jika katalog gagal dimuat, mode gift tidak tersedia dan mode coin tetap dapat digunakan. Tab Gift menyediakan pencarian, filter harga minimum/maksimum diamond, pengurutan, dan pemuatan daftar bertahap. Mapping disimpan berdasarkan ID gift dan dipisah untuk setiap unit serta tim.
+Server mengunduh katalog saat koneksi LIVE dibuat dan menyediakannya sepanjang sesi melalui `/api/tiktok/gifts`. Katalog yang berhasil diunduh disimpan per username di database game, sehingga bisa dipakai lagi saat membuka pengaturan offline. Jika belum pernah ada katalog untuk akun itu, pemilihan gift memerlukan satu koneksi LIVE yang berhasil; mode coin tetap dapat diatur tanpa katalog. Tab Gift menyediakan pencarian, filter harga minimum/maksimum diamond, pengurutan, dan pemuatan daftar bertahap. Mapping disimpan berdasarkan ID gift dan dipisah untuk setiap unit serta tim.
 
 Legenda ikon di sisi arena hanya digambar ketika mode gift aktif, katalog siap, dan opsi **Tampilkan legenda gift** diaktifkan. Ikon troop/gift dan pengaturan label avatar serta username berada di canvas.
 
 ## Pengaturan dan penyimpanan
 
-Pengaturan disimpan di `games/faction-war/data/settings.sqlite`, pada tabel `game_settings` dengan username akun LIVE sebagai key. Akun yang berbeda mempunyai pengaturan terpisah; akun yang sama memakai pengaturannya lagi saat tersambung pada sesi berikutnya. Database dan file journal SQLite tidak dimasukkan ke Git.
+Pengaturan disimpan di `games/faction-war/data/settings.sqlite`, pada tabel `game_settings` dengan username TikTok sebagai key. Katalog gift tersimpan di tabel `gift_catalogs` pada database yang sama. Akun yang berbeda mempunyai pengaturan dan katalog terpisah; akun yang sama memakai datanya lagi saat tersambung pada sesi berikutnya. Database dan file journal SQLite tidak dimasukkan ke Git.
 
-Saat pertama kali dibuka setelah pembaruan ini, pengaturan lama dari `localStorage` key `faction-war-ui-settings-v1` dipindahkan satu kali ke database untuk akun LIVE yang sedang tersambung, lalu key lama dihapus setelah migrasi berhasil. Pengaturan berikutnya hanya dibaca dan ditulis melalui API SQLite. Dialog menampilkan status **Menyimpan…** selama permintaan berlangsung dan pesan error jika server gagal menyimpan.
+Tombol **Pengaturan** di dashboard membuka jendela khusus untuk mengubah konfigurasi berdasarkan username yang dimasukkan meski akun sedang offline. Mode ini tidak memulihkan state pertandingan, menghubungkan listener, menjalankan gameplay, atau mengubah state pertandingan saat ditutup.
+
+Saat pertama kali dibuka setelah pembaruan ini, pengaturan lama dari `localStorage` key `faction-war-ui-settings-v1` dipindahkan satu kali ke database untuk username yang dipilih, lalu key lama dihapus setelah migrasi berhasil. Pengaturan berikutnya hanya dibaca dan ditulis melalui API SQLite. Dialog menampilkan status **Menyimpan…** selama permintaan berlangsung dan pesan error jika server gagal menyimpan.
 
 | Pengaturan | Default |
 | --- | --- |

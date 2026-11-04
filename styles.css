@@ -84,6 +84,8 @@ h1, h2, p { margin-top: 0; }
 .username-control button { display: inline-flex; min-height: 38px; align-items: center; gap: 15px; padding: 0 14px; border: 0; border-radius: 3px; color: #fff; background: #5567e8; font: inherit; font-size: 11px; font-weight: 900; white-space: nowrap; cursor: pointer; }
 .username-control button:hover:not(:disabled) { background: #697bff; }
 .username-control button:disabled { opacity: .65; cursor: wait; }
+.username-control .configure-game-button { gap: 7px; padding: 0 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); }
+.username-control .configure-game-button:hover:not(:disabled) { background: rgba(255,255,255,.15); }
 .form-hint { margin: 7px 0 0; color: #8993af; font-size: 10px; }
 .connection-progress { margin-top: 22px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); }
 .progress-heading { display: flex; align-items: center; gap: 9px; color: #e6eaff; font-size: 12px; }
@@ -105,6 +107,8 @@ h1, h2, p { margin-top: 0; }
 .ready-indicator { width: 8px; height: 8px; border-radius: 50%; background: #53df97; box-shadow: 0 0 14px rgba(83,223,151,.72); }
 .connection-ready strong { color: #fff; }
 .connection-ready button { margin-left: auto; padding: 7px 10px; border: 1px solid rgba(255,255,255,.14); border-radius: 3px; color: #d9def4; background: rgba(255,255,255,.06); font: inherit; font-size: 10px; cursor: pointer; }
+.connection-ready .connection-config-button { margin-left: auto; }
+.connection-ready #change-account-button { margin-left: 0; }
 .connection-ready button:hover { background: rgba(255,255,255,.12); }
 .connection-panel[data-connection-state="connected"] .connection-visual { filter: saturate(1.2); }
 .connection-panel[data-connection-state="connected"] .signal-core { background: radial-gradient(circle at 34% 28%, #53d89a, #17674e 75%); box-shadow: 0 0 60px rgba(83,216,154,.3), inset 0 0 25px rgba(255,255,255,.16); }
@@ -136,6 +140,11 @@ h1, h2, p { margin-top: 0; }
   .hub-shell { width: min(100% - 28px, 1120px); padding-top: 38px; }
   .brand-mark { width: 52px; height: 52px; border-radius: 16px; }
   .hub-header { align-items: flex-start; gap: 14px; }
+  .username-control { gap: 5px; }
+  .username-control button { gap: 6px; padding-right: 8px; padding-left: 8px; font-size: 10px; }
+  .username-control .configure-game-label { display: none; }
+  .connection-ready { flex-wrap: wrap; }
+  .connection-ready .connection-config-button { margin-left: auto; }
   .library { margin-top: 48px; }
   .game-grid { grid-template-columns: minmax(0, 1fr); }
   .game-card-cover { height: 170px; flex-basis: 170px; }
