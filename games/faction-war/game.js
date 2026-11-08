@@ -41,6 +41,11 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     bgMusicVolume: 25,
     likeTroopsEnabled: true,
     likesPerTroop: 100,
+    likeTroopType: "mage",
+    screenShakeEnabled: false,
+    commentTroopEnabled: true,
+    commentTroopCooldown: 15,
+    animationVideosPerRound: 3,
     giftMode: "coin",
     coinCosts: { knight: 1, mage: 5, beast: 15, boss: 100 },
     giftAssignments: {
@@ -55,6 +60,11 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const GIFT_SPAWN_INTERVAL_MS = 220;
   const TROOP_ATTACK_COOLDOWN = 0.8;
   const BOSS_ATTACK_COOLDOWN = 1.6;
+  // Load guards: keep battles punchy without letting crowds tank FPS.
+  const MAX_TROOPS = 90;
+  const HEAVY_TROOP_COUNT = 30;
+  const HEAVY_EFFECT_COUNT = 70;
+  const EFFECT_SOFT_CAP = 96;
   const AVATAR_RADIUS = 52;
   const AVATAR_HEAD_GAP = 6;
   const TROOP_WIDTH = 160;
@@ -125,6 +135,11 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       bgMusicVolume: cleanSoundVolume(saved.bgMusicVolume, DEFAULT_SETTINGS.bgMusicVolume),
       likeTroopsEnabled: saved.likeTroopsEnabled !== false,
       likesPerTroop: cleanPositiveCount(saved.likesPerTroop, DEFAULT_SETTINGS.likesPerTroop),
+      likeTroopType: ["knight", "mage", "beast", "boss"].includes(saved.likeTroopType) ? saved.likeTroopType : DEFAULT_SETTINGS.likeTroopType,
+      screenShakeEnabled: saved.screenShakeEnabled === true,
+      commentTroopEnabled: saved.commentTroopEnabled !== false,
+      commentTroopCooldown: cleanPositiveCount(saved.commentTroopCooldown, DEFAULT_SETTINGS.commentTroopCooldown),
+      animationVideosPerRound: Math.min(10, cleanPositiveCount(saved.animationVideosPerRound, DEFAULT_SETTINGS.animationVideosPerRound)),
       giftMode: saved.giftMode === "gift" ? "gift" : "coin",
       coinCosts,
       giftAssignments
@@ -166,7 +181,14 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     scoreBlue: 0,
     troopHpCapacity: { RED: 0, BLUE: 0 },
     gameStarted: false,
-    animationVideoPlayed: false,
+    animationVideoPlays: 0,
+    animationVideoPlayedUsers: new Set(),
+    commentSpawnCooldowns: new Map(),
+    particles: [],
+    joinedFxKeys: new Set(),
+    heavyCombat: false,
+    shake: { intensity: 0, time: 0, max: 1 },
+    hype: { RED: 0, BLUE: 0 },
     matchOver: false,
     winner: null,
     roundResetTimer: 0,
@@ -194,13 +216,18 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   const TROOP_ATTACK = { knight: 24, mage: 30, beast: 38 };
   const TROOP_PUSH = { knight: 2, mage: 2, beast: 3 };
 
-  // Ambient particles are fixed after setup so the main loop only draws them.
+  // Ambient particles animate procedurally (phase-based sine) so they cost
+  // zero tweens; the renderer derives alpha/offsetY from state.elapsed.
   for (let i = 0; i < 64; i += 1) {
     const particle = {
       x: Math.random() * W,
       y: Math.random() * H,
       radius: 1 + Math.random() * 4,
-      alpha: gsap && !state.reducedMotion ? .28 : .42,
+      baseAlpha: randomBetween(.24, .6),
+      phase: Math.random() * 8,
+      speed: randomBetween(.8, 2.2),
+      offsetAmp: randomBetween(6, 14),
+      alpha: .42,
       offsetY: 0,
       team: Math.random() > 0.5 ? "RED" : "BLUE"
     };
@@ -208,11 +235,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
   }
 
   function startAmbientAnimations() {
-    if (!gsap || state.reducedMotion) return;
-    state.ambient.forEach((particle) => {
-      gsap.to(particle, { alpha: randomBetween(.18, .7), duration: randomBetween(1.1, 2.8), ease: "sine.inOut", repeat: -1, yoyo: true });
-      gsap.to(particle, { offsetY: randomBetween(-12, 12), duration: randomBetween(2.4, 5.2), ease: "sine.inOut", repeat: -1, yoyo: true });
-    });
+    // Procedural now; kept as no-op hooks for existing call sites.
   }
 
   function stopAmbientAnimations() {
@@ -275,33 +298,33 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     const total = state.territoryRed + state.territoryBlue || 1;
     const targetRatio = state.territoryRed / total;
     const targetFrontlineX = TERRITORY_BAR_X + TERRITORY_BAR_WIDTH * territoryPercent("RED") / 100;
-    if (gsap && !state.reducedMotion && state.gameStarted) {
-      gsap.to(state.territoryRatio, { red: targetRatio, duration: .75, ease: "power2.out", overwrite: true });
-      gsap.to(state.frontline, { x: targetFrontlineX, duration: .72, ease: "power2.out", overwrite: true });
-      state.troops.forEach((troop) => {
-        if (troop.dead) return;
-        const targetX = targetFrontlineX + (troop.team === "RED" ? -36 : 36);
-        if (troop.status === "frontline") {
-          gsap.to(troop, { x: targetX, duration: .72, ease: "power2.out", overwrite: "auto" });
-        } else {
-          troop.targetX = targetX;
-          gsap.killTweensOf(troop, "x");
-          gsap.to(troop, {
-            x: targetX,
-            duration: Math.max(.25, Math.abs(targetX - troop.x) / troop.moveSpeed),
-            ease: "none",
-            onComplete: () => reachFrontline(troop)
-          });
-        }
-      });
-    } else {
-      state.territoryRatio.red = targetRatio;
-      state.frontline.x = targetFrontlineX;
-      state.troops.forEach((troop) => {
-        if (troop.dead) return;
-        troop.targetX = targetFrontlineX + (troop.team === "RED" ? -36 : 36);
-        if (troop.status === "frontline") troop.x = troop.targetX;
-      });
+    state.frontlineTargetX = targetFrontlineX;
+    state.territoryTargetRatio = targetRatio;
+    state.troops.forEach((troop) => {
+      if (troop.dead) return;
+      troop.targetX = targetFrontlineX + (troop.team === "RED" ? -36 : 36);
+    });
+  }
+
+  // Territory bar and frontline drift smoothly toward their targets (was a
+  // GSAP tween; a per-frame lerp behaves the same and survives pause/reset).
+  function updateTerritorySmoothing(delta) {
+    if (state.territoryTargetRatio === undefined) return;
+    const step = Math.min(1, delta * 3.4);
+    state.territoryRatio.red += (state.territoryTargetRatio - state.territoryRatio.red) * step;
+    if (state.frontlineTargetX !== undefined) {
+      const prevX = state.frontline.x;
+      state.frontline.x += (state.frontlineTargetX - state.frontline.x) * step;
+      if (Math.abs(state.frontline.x - prevX) > .1) {
+        // Units standing their ground shift with the line so formations stay
+        // glued to the frontline instead of leaving gaps.
+        const dx = state.frontline.x - prevX;
+        state.troops.forEach((troop) => {
+          if (troop.dead || troop.status !== "frontline") return;
+          troop.x += dx;
+          troop.targetX = state.frontline.x + (troop.team === "RED" ? -36 : 36);
+        });
+      }
     }
   }
 
@@ -341,20 +364,18 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.troops.forEach((troop) => {
       if (troop.dead) return;
       troop.status = "victory";
-      if (gsap) gsap.killTweensOf(troop, "x");
     });
-    state.effects.filter((effect) => effect.kind === "projectile").forEach((effect) => {
-      if (gsap) gsap.killTweensOf(effect);
-      effect.finished = true;
+    state.effects.forEach((effect) => {
+      if (effect.kind === "projectile") effect.finished = true;
     });
     state.effects = state.effects.filter((effect) => effect.kind !== "projectile");
 
     playImpact(MID, 930, state.winner, 270);
-    floatingLabel("VICTORY!", MID, 730, state.winner, 64);
+    addShake(40, .8, 46);
+    spawnParticles(MID, 930, state.winner, 40);
+    floatingLabel("VICTORY!", MID, 730, state.winner, 74);
     saveGameState();
-    if (state.gameStarted && gsap && !state.reducedMotion) {
-      state.resetCall = gsap.delayedCall(state.roundResetTimer, resetRound);
-    }
+    // Round reset is counted down by the frame loop (state.roundResetTimer).
   }
 
   function resetGiftSession() {
@@ -362,6 +383,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.viewerProfiles.clear();
     state.giftCoinBalances.clear();
     state.viewerLikeCounts.clear();
+    state.commentSpawnCooldowns.clear();
+    state.joinedFxKeys.clear();
     clearPendingGiftSpawns();
   }
 
@@ -379,9 +402,13 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.troops = [];
     state.effects = [];
     state.labels = [];
+    state.particles = [];
+    state.shake = { intensity: 0, time: 0, max: 1 };
+    state.hype = { RED: 0, BLUE: 0 };
     state.troopHpCapacity = { RED: 0, BLUE: 0 };
     resetGiftSession();
-    state.animationVideoPlayed = false;
+    state.animationVideoPlays = 0;
+    state.animationVideoPlayedUsers.clear();
     state.matchOver = false;
     state.winner = null;
     state.roundResetTimer = 0;
@@ -415,13 +442,6 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     if (listenerEndpoint) tiktokConnector.connect(listenerEndpoint);
     startAmbientAnimations();
     updateTerritoryBar();
-    state.troops.forEach((troop) => {
-      if (gsap && !state.reducedMotion) {
-        gsap.to(troop, { rotation: randomBetween(-8, 8), duration: randomBetween(.32, .48), ease: "sine.inOut", repeat: -1, yoyo: true });
-        gsap.to(troop, { scaleY: 1.08, duration: .28, ease: "sine.inOut", repeat: -1, yoyo: true });
-        gsap.to(troop, { bobY: troop.isBoss ? 5 : 3, duration: troop.isBoss ? .56 : .38, ease: "sine.inOut", repeat: -1, yoyo: true });
-      }
-    });
     updateGameControls();
     checkVictory();
     saveGameState();
@@ -449,6 +469,9 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.effects = [];
     state.labels = [];
     state.feed = [];
+    state.particles = [];
+    state.shake = { intensity: 0, time: 0, max: 1 };
+    state.hype = { RED: 0, BLUE: 0 };
     state.troopHpCapacity = { RED: 0, BLUE: 0 };
     resetGiftSession();
     state.territoryRed = TERRITORY_MAX_HP / 2;
@@ -458,7 +481,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.scoreRed = 0;
     state.scoreBlue = 0;
     state.gameStarted = false;
-    state.animationVideoPlayed = false;
+    state.animationVideoPlays = 0;
+    state.animationVideoPlayedUsers.clear();
     tiktokConnector.disconnect();
     stopAmbientAnimations();
     state.matchOver = false;
@@ -479,63 +503,243 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.feed.length = Math.min(state.feed.length, 12);
   }
 
-  function floatingLabel(text, x, y, team, size = 42) {
-    const label = { text, x, y, alpha: 1, scale: .75, size, color: TEAM[teamOf(team)].color };
-    state.labels.push(label);
-    if (gsap && !state.reducedMotion) {
-      gsap.fromTo(label, { y: y + 12, alpha: 0, scale: .55 }, {
-        y: y - 84, alpha: 0, scale: 1.12, duration: .95, ease: "power2.out",
-        onComplete: () => { state.labels = state.labels.filter((item) => item !== label); }
-      });
-    } else {
-      label.fallbackTime = 0;
-    }
+  function easeOutQuad(t) { const c = 1 - t; return 1 - c * c; }
+  function easeInQuad(t) { return t * t; }
+  function easeOutBack(t) {
+    const c1 = 1.24;
+    return 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
-  function playImpact(x, y, team, size = 180) {
-    const winner = teamOf(team);
-    const impact = { kind: "impact", x, y, team: winner, alpha: 1, scale: .25, size };
-    state.effects.push(impact);
-    if (gsap && !state.reducedMotion) {
-      gsap.fromTo(impact, { scale: .25, alpha: .95 }, {
-        scale: size < 150 ? 1.65 : 1.35, alpha: 0, duration: .58, ease: "power2.out",
-        onComplete: () => { state.effects = state.effects.filter((item) => item !== impact); }
-      });
-    } else {
-      impact.fallbackTime = 0;
+  // Combat VFX are advanced by one centralized pass each frame (instead of a
+  // GSAP tween per object), which keeps frame cost flat when hundreds of
+  // effects spawn during crowded fights.
+  function addCombatEffect(effect, premium = false) {
+    if (!effect) return null;
+    effect.time = 0;
+    effect.startScale = effect.scale;
+    effect.alpha0 = effect.alpha;
+    if (premium) {
+      effect.premium = true;
+    } else if (state.effects.length >= EFFECT_SOFT_CAP) {
+      return null;
     }
+    state.effects.push(effect);
+    if (state.effects.length > EFFECT_SOFT_CAP + 24) {
+      for (let index = 0; index < state.effects.length; index += 1) {
+        if (!state.effects[index].premium) { state.effects.splice(index, 1); break; }
+      }
+    }
+    return effect;
+  }
+
+  function damageLabel(x, y, team, text, kind) {
+    const size = kind === "ko" ? 58 : (kind === "mega" ? 60 : (kind === "big" ? 46 : (kind === "boss" ? 40 : 36)));
+    const color = kind === "ko" || kind === "mega" ? "#ffd34d" : TEAM[teamOf(team)].color;
+    const label = {
+      text, x, y, alpha: 0, scale: .45, size, color,
+      startX: x, startY: y, driftX: randomBetween(-52, 52),
+      rise: kind === "ko" || kind === "mega" ? 130 : 96,
+      endScale: kind === "ko" || kind === "mega" ? 1.3 : 1.08,
+      duration: kind === "ko" || kind === "mega" ? 1.25 : .95,
+      time: 0
+    };
+    state.labels.push(label);
+    if (state.labels.length > 60) state.labels.splice(0, state.labels.length - 60);
+  }
+
+  function floatingLabel(text, x, y, team, size = 42) {
+    const label = {
+      text, x, y, alpha: 0, scale: .55, size, color: TEAM[teamOf(team)].color,
+      startX: x, startY: y, driftX: 0, rise: 84, endScale: 1.12, duration: .95, time: 0
+    };
+    state.labels.push(label);
+    if (state.labels.length > 60) state.labels.splice(0, state.labels.length - 60);
+  }
+
+  function playImpact(x, y, team, size = 180) {    const winner = teamOf(team);
+    const impact = {
+      kind: "impact", x, y, team: winner, alpha: .95, scale: .25, size, time: 0,
+      duration: .58, endScale: size < 150 ? 1.65 : 1.35
+    };
+    addCombatEffect(impact);
     return impact;
   }
 
-  function playBossAttack(team, x, y) {
-    const impact = {
-      kind: "bossImpact", team, x, y,
-      alpha: 1, scale: .2, rotation: 0
-    };
-    state.effects.push(impact);
-
-    if (gsap && !state.reducedMotion) {
-      gsap.fromTo(impact, { scale: .2, alpha: 1 }, {
-        scale: 1.55, alpha: 0, duration: .56, ease: "power2.out",
-        onComplete: () => { state.effects = state.effects.filter((effect) => effect !== impact); }
-      });
-    } else {
-      impact.fallbackTime = 0;
-      impact.duration = .56;
+  function addShake(intensity, duration = .3, maxOverride = 0) {
+    if (settingsOnlyMode || state.reducedMotion || !state.gameStarted) return;
+    if (!uiSettings.screenShakeEnabled) {
+      // Even with screen shake off, keep a faint zoom-free kick for big hits?
+      // No: users asked for no shake. Hit-stop remains for impact weight.
+      return;
     }
+    const shake = state.shake;
+    if (intensity > shake.intensity || shake.time <= 0) {
+      shake.intensity = clamp(intensity, 0, 46);
+      shake.time = Math.min(.8, Math.max(duration, shake.time));
+    }
+    if (maxOverride > (shake.max || 1)) shake.max = maxOverride;
+    requestRender();
+  }
+
+  let lastHitStopAt = 0;
+  let hitStopUntil = 0;
+  function hitStop(duration) {
+    if (settingsOnlyMode || state.reducedMotion || !state.gameStarted || state.matchOver) return;
+    // rAF timestamps use the performance clock, so compare within the same base.
+    const now = performance.now();
+    if (now - lastHitStopAt < 240) return;
+    lastHitStopAt = now;
+    hitStopUntil = now + duration * 1000;
+  }
+
+  const PARTICLE_COLORS = {
+    RED: ["#ffca79", "#ff8a37", "#ff5a52"],
+    BLUE: ["#dfffff", "#55d5ff", "#4abfff"]
+  };
+  function spawnParticles(x, y, team, count = 8) {
+    if (settingsOnlyMode || state.reducedMotion || !state.gameStarted) return;
+    // Heavy crowds: halve particle output to keep the fill rate cheap.
+    if (state.heavyCombat) count = Math.ceil(count / 2);
+    const colors = PARTICLE_COLORS[teamOf(team)];
+    for (let i = 0; i < count; i += 1) {
+      state.particles.push({
+        x, y,
+        vx: randomBetween(-320, 320),
+        vy: randomBetween(-360, 60),
+        radius: randomBetween(2.5, 6.5),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        alpha: 1,
+        life: randomBetween(.35, .7),
+        age: 0
+      });
+    }
+    if (state.particles.length > 260) state.particles.splice(0, state.particles.length - 260);
+  }
+
+  function updateParticles(delta) {
+    if (!state.particles.length) return;
+    const particles = state.particles;
+    let write = 0;
+    for (let i = 0; i < particles.length; i += 1) {
+      const particle = particles[i];
+      particle.age += delta;
+      if (particle.age >= particle.life) continue;
+      particle.x += particle.vx * delta;
+      particle.y += particle.vy * delta;
+      particle.vy += 980 * delta;
+      particle.alpha = Math.max(0, 1 - particle.age / particle.life);
+      particles[write++] = particle;
+    }
+    particles.length = write;
+  }
+
+  function updateShake(delta) {
+    const shake = state.shake;
+    if (shake.time <= 0 && shake.intensity <= 0) { shake.x = 0; shake.y = 0; return; }
+    shake.time -= delta;
+    if (shake.time <= 0) {
+      shake.intensity = 0;
+      shake.max = 1;
+      shake.x = 0;
+      shake.y = 0;
+      return;
+    }
+    const fade = Math.max(0, Math.min(1, shake.time / .3));
+    const amp = shake.intensity * fade;
+    shake.x = randomBetween(-amp, amp);
+    shake.y = randomBetween(-amp, amp);
+  }
+
+  function spawnConfetti(x, y) {
+    if (settingsOnlyMode || state.reducedMotion || !state.gameStarted) return;
+    const colors = ["#ffd34d", "#fff4c4", "#ff9a4f", "#8cecff", "#ffffff", "#ff5a52", "#4abfff"];
+    for (let i = 0; i < 34; i += 1) {
+      state.particles.push({
+        x: x + randomBetween(-48, 48),
+        y: y + randomBetween(-22, 22),
+        vx: randomBetween(-560, 560),
+        vy: randomBetween(-680, -80),
+        radius: randomBetween(3, 8),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        alpha: 1,
+        life: randomBetween(.6, 1.15),
+        age: 0
+      });
+    }
+    if (state.particles.length > 340) state.particles.splice(0, state.particles.length - 340);
+  }
+
+  function triggerJoinFx(teamValue, username, viewerKey, avatarUrl) {
+    const key = String(viewerKey || username || "").toLowerCase();
+    const team = teamOf(teamValue);
+    if (!key || state.joinedFxKeys.has(key)) return;
+    state.joinedFxKeys.add(key);
+    const profile = state.viewerProfiles.get(key);
+    if (profile) profile.joinedAt = Date.now();
+    if (state.reducedMotion) {
+      // Instant, no fly-in: just record the join; the roster avatar appears.
+      requestRender();
+      return;
+    }
+    const fx = addCombatEffect({
+      kind: "joinShow",
+      premium: true,
+      team,
+      startX: team === "RED" ? 90 : W - 90,
+      startY: 130,
+      x: team === "RED" ? 245 : W - 245,
+      y: 585,
+      username: String(username || "Player").slice(0, 18),
+      avatarUrl: safeAvatarUrl(avatarUrl) || safeAvatarUrl(profile?.avatarUrl),
+      progress: 0, pop: 0, life: 0, landed: false, ringSpin: 0, time: 0, duration: .45
+    }, true);
+    if (fx) requestRender();
+  }
+
+  function playBossAttack(team, x, y) {
+    addCombatEffect({
+      kind: "bossImpact", team, x, y,
+      alpha: 1, scale: .2, rotation: 0, duration: .56, endScale: 1.55
+    });
   }
 
   function playShield(troop) {
-    const shield = { kind: "shield", team: troop.team, x: troop.x, y: troop.y, alpha: .8, scale: .72 };
-    state.effects.push(shield);
-    if (gsap && !state.reducedMotion) {
-      gsap.to(shield, {
-        alpha: 0, scale: 1.2, duration: .34, ease: "power2.out",
-        onComplete: () => { state.effects = state.effects.filter((effect) => effect !== shield); }
-      });
-    } else {
-      shield.fallbackTime = 0;
-    }
+    addCombatEffect({
+      kind: "shield", team: troop.team, x: troop.x, y: troop.y,
+      alpha: .8, scale: .72, duration: .34
+    });
+  }
+
+  function playSlash(x, y, team, facingLeft) {
+    addCombatEffect({
+      kind: "slash", team: teamOf(team), x, y, alpha: .95, scale: .45,
+      rotation: facingLeft ? Math.PI : 0, duration: .42, endScale: 1.35
+    });
+  }
+
+  function playClaw(x, y, team) {
+    addCombatEffect({
+      kind: "claw", team: teamOf(team), x, y, alpha: 1, scale: .7, progress: 0, duration: .46
+    });
+  }
+
+  function playBurst(x, y, team) {
+    addCombatEffect({
+      kind: "burst", team: teamOf(team), x, y, alpha: .95, scale: .3,
+      rotation: Math.random() * Math.PI, spin: Math.PI / 5, duration: .5, endScale: 1.25
+    });
+  }
+
+  function playShockwave(x, y, team) {
+    addCombatEffect({
+      kind: "shockwave", team: teamOf(team), x, y, alpha: .9, scale: .25, duration: .7, endScale: 2.1
+    });
+  }
+
+  function playSpawnAura(x, y, team, style) {
+    addCombatEffect({
+      kind: "spawnAura", team: teamOf(team), x, y, alpha: 1, scale: .35, style, duration: .8, progress: 0, endScale: 1.3
+    });
   }
 
   function launchProjectile(attacker, targetX, targetY, onImpact) {
@@ -543,46 +747,43 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       kind: "projectile", team: attacker.team,
       x: attacker.x, y: attacker.y - (attacker.isBoss ? 45 : 22),
       startX: attacker.x, startY: attacker.y - (attacker.isBoss ? 45 : 22),
-      targetX, targetY, alpha: 1, scale: .9, rotation: 0, progress: 0, finished: false
+      targetX, targetY, alpha: 1, scale: .9, rotation: 0, progress: 0, finished: false,
+      duration: .38, time: 0, onImpact, premium: true
     };
-    state.effects.push(projectile);
-    const finish = () => {
-      if (projectile.finished) return;
-      projectile.finished = true;
-      state.effects = state.effects.filter((effect) => effect !== projectile);
-      if (!state.matchOver) onImpact();
-    };
-    projectile.finish = finish;
-    if (gsap && !state.reducedMotion) {
-      gsap.to(projectile, {
-        x: targetX, y: targetY, rotation: Math.PI * 2, scale: 1.15,
-        duration: .38, ease: "power2.in", onComplete: finish
-      });
-    } else {
-      projectile.fallbackTime = 0;
-      projectile.duration = .38;
+    // Projectiles resolve damage, so they bypass the soft cap. Hard ceiling
+    // only as a last resort: instantly land the oldest in-flight projectile.
+    if (state.effects.length > EFFECT_SOFT_CAP + 60) {
+      const oldest = state.effects.find((effect) => effect.kind === "projectile" && !effect.finished);
+      if (oldest) {
+        oldest.finished = true;
+        state.effects = state.effects.filter((effect) => effect !== oldest);
+        if (!state.matchOver) oldest.onImpact?.();
+      }
     }
+    state.effects.push(projectile);
   }
 
   function impactAt(x, y, team, amount, username = "") {
     const winner = teamOf(team);
     playImpact(x, y, winner);
-    floatingLabel(`-${formatTerritoryDelta(amount)}`, x, y - 12, winner, amount / TERRITORY_MAX_HP >= .4 ? 53 : 43);
+    damageLabel(x, y - 12, winner, `-${formatTerritoryDelta(amount)}`, amount / TERRITORY_MAX_HP >= .4 ? "big" : "normal");
+    spawnParticles(x, y, winner, 8);
+    addShake(10, .26);
     setTerritory(winner, amount);
     pushFeed(winner, username || `${winner} Faction`, `dealt ${formatTerritoryDelta(amount)} territory damage`);
   }
 
-  function retireTroop(troop) {
+  function retireTroop(troop, silent = false) {
     if (troop.dead || troop.status === "dying") return;
     troop.status = "dying";
     troop.dead = true;
-    const remove = () => { state.troops = state.troops.filter((item) => item !== troop); };
-    if (gsap) gsap.killTweensOf(troop);
-    if (gsap && !state.reducedMotion) {
-      gsap.to(troop, { alpha: 0, popScale: .2, duration: .32, ease: "power2.in", onComplete: remove });
-    } else {
-      remove();
+    troop.deathTime = 0;
+    if (!silent) {
+      spawnParticles(troop.x, troop.y, troop.team, troop.isBoss ? 18 : 10);
+      addShake(troop.isBoss ? 22 : 12, .3, troop.isBoss ? 30 : 0);
     }
+    if (gsap) gsap.killTweensOf(troop);
+    // The central animation pass fades alpha/popScale and removes the corpse.
   }
 
   function reachFrontline(troop) {
@@ -590,10 +791,6 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     troop.status = "frontline";
     troop.x = state.frontline.x + (troop.team === "RED" ? -36 : 36);
     troop.attackTimer = randomBetween(.55, .9);
-    if (gsap && !state.reducedMotion) {
-      gsap.killTweensOf(troop, "x");
-      gsap.to(troop, { x: state.frontline.x + (troop.team === "RED" ? -36 : 36), duration: .24, ease: "power1.out" });
-    }
     pushFeed(troop.team, troop.username, "reached the frontline and is attacking!");
   }
 
@@ -628,26 +825,30 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     };
     // Keep the same horizontal speed regardless of how far the frontline is.
     troop.moveSpeed = (isBoss ? 58 : 108) * troop.speed;
-    const movementDuration = Math.max(.25, Math.abs(targetX - spawnX) / troop.moveSpeed);
     state.troops.push(troop);
     state.troopHpCapacity[team] += maxHp;
     state.spawnCount += 1;
+    // Crowd control: when a flood of spawns piles up, quietly fold the oldest
+    // non-boss units back so the fight stays readable and cheap to simulate.
+    let overflow = Math.max(0, state.troops.length - MAX_TROOPS);
+    if (overflow > 0) {
+      for (let index = 0; index < state.troops.length - 1 && overflow > 0; index += 1) {
+        const elder = state.troops[index];
+        if (elder === troop || elder.isBoss || elder.dead || elder.status === "dying") continue;
+        elder.hp = 0;
+        retireTroop(elder, true);
+        overflow -= 1;
+      }
+    }
     audio.playTroopSound(troop, "spawn");
+    playSpawnAura(spawnX + (team === "RED" ? 30 : -30), y + 30, team, isBoss ? "boss" : safeType);
     const title = isBoss ? "Golem Boss" : TROOP_NAMES[safeType];
     const message = isBoss ? "summoned a Boss!" : `spawned a ${title}!`;
     pushFeed(team, user, message);
     floatingLabel(isBoss ? "BOSS!" : `+ ${title.toUpperCase()}`, spawnX, y - 125, team, isBoss ? 40 : 29);
 
-    if (state.gameStarted && gsap && !state.reducedMotion) {
-      gsap.to(troop, { x: targetX, duration: movementDuration, ease: "none", onComplete: () => reachFrontline(troop) });
-      gsap.to(troop, { rotation: randomBetween(-8, 8), duration: randomBetween(.32, .48), ease: "sine.inOut", repeat: -1, yoyo: true });
-      gsap.to(troop, { scaleY: 1.08, duration: .28, ease: "sine.inOut", repeat: -1, yoyo: true });
-      gsap.to(troop, { bobY: isBoss ? 5 : 3, duration: isBoss ? .56 : .38, ease: "sine.inOut", repeat: -1, yoyo: true });
-      if (isBoss) gsap.to(troop, { frontPose: 0, delay: .55, duration: 0 });
-      gsap.fromTo(troop, { popScale: .72 }, { popScale: 1, duration: isBoss ? .48 : .32, ease: "back.out(2)" });
-    } else {
-      troop.popScale = 1;
-    }
+    // Unit motion and idle animation are procedural (single update pass);
+    // this avoids hundreds of overlapping GSAP tweens in crowded fights.
     return troop;
   }
 
@@ -655,43 +856,57 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     troop.attackOffset = TEAM[troop.team].direction * 18;
     troop.attackOffsetTimer = .3;
     troop.attackSwingTimer = .32;
-    if (gsap && !state.reducedMotion) {
-      gsap.to(troop, { attackOffset: 0, delay: .1, duration: .18, ease: "power2.out", overwrite: true });
-      gsap.killTweensOf(troop, "attackSwing");
-      gsap.fromTo(troop, { attackSwing: 0 }, {
-        attackSwing: 1, duration: .32, ease: "power2.out", overwrite: true,
-        onComplete: () => { troop.attackSwing = 0; }
-      });
+  }
+
+  function playUnitStrikeEffect(attacker, x, y) {
+    // In heavy fights, keep only the cheapest strike cue to cap draw cost.
+    if (state.heavyCombat) {
+      if (attacker.type === "knight" && !attacker.isBoss) playSlash(x, y - 10, attacker.team, attacker.team === "BLUE");
+      return;
     }
+    if (attacker.isBoss) playShockwave(x, y + 30, attacker.team);
+    else if (attacker.type === "knight") playSlash(x, y - 10, attacker.team, attacker.team === "BLUE");
+    else if (attacker.type === "beast") playClaw(x, y - 8, attacker.team);
+    else if (attacker.type === "mage") playBurst(x, y - 12, attacker.team);
   }
 
   function resolveUnitAttack(attacker, target, damage = attacker.attackDamage, bossPrimaryHit = false) {
     if (state.matchOver || attacker.dead || target.dead) return;
     target.hp = Math.max(0, target.hp - damage);
     playShield(target);
+    playUnitStrikeEffect(attacker, target.x, target.y);
+    target.hitFlash = 1;
+    target.knockback = (target.knockback || 0) + (bossPrimaryHit ? 40 : (attacker.isBoss ? 26 : 12));
     const impactSize = bossPrimaryHit ? 320 : (target.hp <= 0 ? 170 : (attacker.type === "beast" ? 132 : 92));
     playImpact(target.x, target.y, attacker.team, impactSize);
-    floatingLabel(`-${Math.round(damage)}`, target.x, target.y - 58, attacker.team, target.isBoss ? 38 : 31);
+    spawnParticles(target.x, target.y - 10, attacker.team, bossPrimaryHit ? 12 : (attacker.isBoss ? 8 : 6));
+    addShake(bossPrimaryHit ? 26 : (target.hp <= 0 ? 20 : (attacker.isBoss ? 15 : 7)), .26, bossPrimaryHit || target.hp <= 0 ? 34 : 0);
     if (target.hp <= 0) {
-      floatingLabel("KO!", target.x, target.y - 104, attacker.team, 36);
+      hitStop(.055);
+      damageLabel(target.x, target.y - 104, attacker.team, "KO!", "ko");
       pushFeed(attacker.team, attacker.username, `defeated ${target.username}'s ${target.isBoss ? "Boss" : TROOP_NAMES[target.type]}`);
       retireTroop(target);
+    } else {
+      damageLabel(target.x, target.y - 58, attacker.team, `-${Math.round(damage)}`, bossPrimaryHit || attacker.isBoss ? "big" : "normal");
     }
   }
 
-  function attackUnit(attacker, targets) {
-    if (attacker.dead || !targets.length) return;
+  function attackUnit(attacker, targets, targetCount = targets.length) {
+    if (attacker.dead || !targetCount) return;
     audio.playTroopSound(attacker, "attack");
     lunge(attacker);
-    const damagePerTarget = attacker.attackDamage / targets.length;
+    const damagePerTarget = attacker.attackDamage / targetCount;
     const primaryTarget = targets[0];
     if (attacker.isBoss) playBossAttack(attacker.team, primaryTarget.x, primaryTarget.y + 42);
     if (attacker.type === "mage" && !attacker.isBoss) {
-      targets.forEach((target) => {
+      for (let index = 0; index < targetCount; index += 1) {
+        const target = targets[index];
         launchProjectile(attacker, target.x, target.y - 12, () => resolveUnitAttack(attacker, target, damagePerTarget));
-      });
+      }
     } else {
-      targets.forEach((target, index) => resolveUnitAttack(attacker, target, damagePerTarget, attacker.isBoss && index === 0));
+      for (let index = 0; index < targetCount; index += 1) {
+        resolveUnitAttack(attacker, targets[index], damagePerTarget, attacker.isBoss && index === 0);
+      }
     }
   }
 
@@ -699,6 +914,36 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     return state.troops.some((enemy) =>
       !enemy.dead && (enemy.status === "advancing" || enemy.status === "frontline") && enemy.team !== team
     );
+  }
+
+  function updateUnitVisualState(delta) {
+    state.troops.forEach((troop) => {
+      if (troop.hitFlash) troop.hitFlash = Math.max(0, troop.hitFlash - delta * 5);
+      if (troop.recoil) troop.recoil += (0 - troop.recoil) * Math.min(1, delta * 10);
+      if (troop.knockback) {
+        const push = troop.knockback;
+        troop.recoil = clamp((troop.recoil || 0) + push * (troop.team === "RED" ? -1 : 1), -46, 46);
+        troop.knockback = 0;
+      }
+    });
+  }
+
+  function updateHype() {
+    const total = state.territoryRed + state.territoryBlue || 1;
+    ["RED", "BLUE"].forEach((team) => {
+      const ratio = (team === "RED" ? state.territoryRed : state.territoryBlue) / total;
+      const active = state.hype[team] > 0;
+      if (!active && ratio >= .78 && state.gameStarted && !state.matchOver) {
+        state.hype[team] = 1;
+        const x = team === "RED" ? 130 : W - 130;
+        damageLabel(x, 500, team, "MEGA PUSH!", "mega");
+        addShake(24, .5, 30);
+        pushFeed(team, `${teamDisplayName(team)} Faction`, "is DOMINATING the arena!");
+      } else if (active && ratio < .66) {
+        state.hype[team] = 0;
+      }
+    });
+    audio.setHypeMusicBoost(Boolean(state.hype.RED || state.hype.BLUE));
   }
 
   function pushFrontline(troop) {
@@ -709,9 +954,12 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       if (troop.dead || state.matchOver || hasOpposingUnits(troop.team)) return;
       const amount = troop.pushPower;
       const x = state.frontline.x;
+      playUnitStrikeEffect(troop, x + (troop.team === "RED" ? 20 : -20), troop.y);
       playImpact(x, troop.y, troop.team, troop.isBoss ? 190 : (troop.type === "beast" ? 145 : 112));
       if (troop.isBoss) playBossAttack(troop.team, x, troop.y + 58);
-      floatingLabel(`+${formatTerritoryDelta(amount)}`, x, troop.y - 55, troop.team, troop.isBoss ? 43 : 32);
+      spawnParticles(x, troop.y, troop.team, troop.isBoss ? 10 : 6);
+      addShake(troop.isBoss ? 14 : 6, .22);
+      damageLabel(x, troop.y - 55, troop.team, `+${formatTerritoryDelta(amount)}`, troop.isBoss ? "big" : "normal");
       setTerritory(troop.team, amount);
       troop.pushCount += 1;
       if (troop.pushCount % 3 === 1) {
@@ -726,23 +974,68 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     }
   }
 
+  function dashLunge(troop, target) {
+    // Snap briefly toward a near-but-out-of-reach enemy so idle troops look
+    // aggressive instead of standing still while attrition ticks.
+    const distance = target.x - troop.x;
+    const offset = clamp(distance, -46, 46);
+    troop.attackOffset = offset;
+    troop.attackOffsetTimer = .34;
+  }
+
+  // Scratch buffers reused every frame so target scanning allocates nothing.
+  const combatTargetList = [];
+  const combatTargetDists = [];
+  function collectCombatTarget(enemy, dist, count) {
+    // Keep the 5 nearest hits in a stable sorted scratch buffer (zero allocation).
+    let k = Math.min(count, 4);
+    while (k > 0 && combatTargetDists[k - 1] > dist) {
+      combatTargetList[k] = combatTargetList[k - 1];
+      combatTargetDists[k] = combatTargetDists[k - 1];
+      k -= 1;
+    }
+    combatTargetList[k] = enemy;
+    combatTargetDists[k] = dist;
+    return Math.min(count + 1, 5);
+  }
+
   function updateCombat(delta) {
     if (state.matchOver) return;
-    const troops = [...state.troops];
-    troops.forEach((troop) => {
-      if (state.matchOver || troop.dead || troop.status !== "frontline") return;
+    const troops = state.troops;
+    const total = troops.length;
+    for (let i = 0; i < total; i += 1) {
+      const troop = troops[i];
+      if (state.matchOver || troop.dead || troop.status !== "frontline") continue;
       troop.attackTimer -= delta;
-      if (troop.attackTimer > 0) return;
+      if (troop.attackTimer > 0) continue;
       troop.attackTimer = troop.attackCooldown;
 
-      const targets = state.troops
-        .filter((enemy) => !enemy.dead && enemy.status === "frontline" && enemy.team !== troop.team)
-        .filter((enemy) => Math.abs(enemy.x - troop.x) < (troop.isBoss || enemy.isBoss ? 150 : 118))
-        .sort((a, b) => Math.abs(a.x - troop.x) - Math.abs(b.x - troop.x));
+      let targetCount = 0;
+      let nearestOut = null;
+      let nearestOutDist = Infinity;
+      for (let j = 0; j < total; j += 1) {
+        const enemy = troops[j];
+        if (enemy.dead || enemy.status !== "frontline" || enemy.team === troop.team) continue;
+        const isBossRange = troop.isBoss || enemy.isBoss;
+        const dist = Math.abs(enemy.x - troop.x);
+        if (dist < (isBossRange ? 150 : 118)) {
+          targetCount = collectCombatTarget(enemy, dist, targetCount);
+        } else if (dist < (isBossRange ? 260 : 210) && dist < nearestOutDist) {
+          nearestOut = enemy;
+          nearestOutDist = dist;
+        }
+      }
 
-      if (targets.length) attackUnit(troop, targets);
-      else if (!hasOpposingUnits(troop.team)) pushFrontline(troop);
-    });
+      if (targetCount) {
+        attackUnit(troop, combatTargetList, targetCount);
+      } else if (nearestOut) {
+        dashLunge(troop, nearestOut);
+        combatTargetList[0] = nearestOut;
+        attackUnit(troop, combatTargetList, 1);
+      } else if (!hasOpposingUnits(troop.team)) {
+        pushFrontline(troop);
+      }
+    }
   }
 
   function updateBattleAttrition(delta) {
@@ -843,11 +1136,15 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
         state.giftCoinBalances.set(userKey, 0);
         rememberViewer(event, team, userKey);
         handleGameCommand({ action: "JOIN_TEAM", team, username: event.username, joinSource: "like" });
+        triggerJoinFx(team, event.username, userKey, event.avatarUrl);
       } else {
         rememberViewer(event, team, userKey);
       }
+      const likeTroopType = ["knight", "mage", "beast", "boss"].includes(uiSettings.likeTroopType)
+        ? uiSettings.likeTroopType
+        : "knight";
       for (let i = 0; i < troopCount; i += 1) {
-        enqueueGiftSpawn(team, "knight", event.username || "TikTok User", `${uiSettings.likesPerTroop} Likes`, event);
+        enqueueGiftSpawn(team, likeTroopType, event.username || "TikTok User", `${uiSettings.likesPerTroop} Likes`, event);
       }
       saveGameState();
       return true;
@@ -857,13 +1154,31 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       const team = choice === "1" || choice === "join1" ? "RED" : choice === "2" || choice === "join2" ? "BLUE" : null;
       if (!team) return false;
       const userKey = viewerIdentityKey(event);
-      if (state.viewerTeams.has(userKey) && state.viewerTeams.get(userKey) !== team) {
+      const firstJoin = !state.viewerTeams.has(userKey);
+      if (firstJoin) {
+        state.viewerTeams.set(userKey, team);
+      } else if (state.viewerTeams.get(userKey) !== team) {
         state.giftCoinBalances.set(userKey, 0);
+        state.viewerTeams.set(userKey, team);
       }
-      state.viewerTeams.set(userKey, team);
       rememberViewer(event, team, userKey);
       saveGameState();
-      return handleGameCommand({ action: "JOIN_TEAM", team, username: event.username });
+      const joined = handleGameCommand({ action: "JOIN_TEAM", team, username: event.username });
+      if (firstJoin) triggerJoinFx(team, event.username, userKey, event.avatarUrl);
+      if (uiSettings.commentTroopEnabled) {
+        const now = Date.now();
+        const last = state.commentSpawnCooldowns.get(userKey) || 0;
+        const cooldownMs = Math.max(1, uiSettings.commentTroopCooldown) * 1000;
+        // A viewer joining for the first time always gets a troop; repeat
+        // comments must wait out the per-viewer cooldown.
+        if (firstJoin || now - last >= cooldownMs) {
+          state.commentSpawnCooldowns.set(userKey, now);
+          enqueueGiftSpawn(team, "knight", event.username || "TikTok User", "Komentar 1/2", event);
+        } else {
+          floatingLabel(`⏳ ${Math.ceil((cooldownMs - (now - last)) / 1000)}s`, team === "RED" ? 280 : 800, 900, team, 30);
+        }
+      }
+      return joined;
     }
     if (event.type === "gift") {
       const giftName = String(event.giftName || "Gift");
@@ -880,6 +1195,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
         if (!matchedAssignment) return false;
         const { type: matchedType, team } = matchedAssignment;
         rememberViewer(event, team);
+        triggerJoinFx(team, username, viewerIdentityKey(event), event.avatarUrl);
         const count = clamp(Math.floor(Number(event.giftCount) || 1), 1, 25);
         for (let i = 0; i < count; i += 1) enqueueGiftSpawn(team, matchedType, username, giftName, event);
         saveGameState();
@@ -894,6 +1210,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
         state.giftCoinBalances.set(userKey, 0);
         rememberViewer(event, team, userKey);
         handleGameCommand({ action: "JOIN_TEAM", team, username, joinSource: "gift" });
+        triggerJoinFx(team, username, userKey, event.avatarUrl);
       } else {
         rememberViewer(event, team, userKey);
       }
@@ -964,9 +1281,14 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     pendingGiftSpawnTimer = 0;
   }
 
-  function updateFallbackAnimations(delta) {
-    if (gsap && !state.reducedMotion) return;
-    state.troops.forEach((troop) => {
+  // Central animation pass. Replaces the old per-object GSAP tweens for
+  // labels and combat effects: one loop advances everything with a time field
+  // and prunes dead entries in place (no array copies, no onComplete filters).
+  function updateMotionAnimations(delta) {
+    const troops = state.troops;
+    let troopWrite = 0;
+    for (let i = 0; i < troops.length; i += 1) {
+      const troop = troops[i];
       if (troop.status === "advancing") {
         const remaining = troop.targetX - troop.x;
         const step = troop.moveSpeed * delta;
@@ -977,48 +1299,112 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
           troop.x += Math.sign(remaining) * step;
         }
       }
-      troop.rotation = Math.sin(state.elapsed * 8 + troop.phase) * 7;
-      troop.scaleY = 1 + Math.sin(state.elapsed * 11 + troop.phase) * .07;
-      troop.bobY = Math.sin(state.elapsed * 4.8 + troop.phase) * (troop.isBoss ? 5 : 3);
-      if (troop.isBoss) troop.frontPose = troop.spawnAge < .55 ? 1 : 0;
+      if (!troop.dead) {
+        troop.rotation = Math.sin(state.elapsed * 8 + troop.phase) * 7;
+        troop.scaleY = 1 + Math.sin(state.elapsed * 11 + troop.phase) * .07;
+        troop.bobY = Math.sin(state.elapsed * 4.8 + troop.phase) * (troop.isBoss ? 5 : 3);
+        if (troop.isBoss) troop.frontPose = troop.spawnAge < .55 ? 1 : 0;
+      }
+      if (troop.popScale < 1) troop.popScale = Math.min(1, troop.popScale + delta * 3.2);
       troop.attackOffsetTimer = Math.max(0, troop.attackOffsetTimer - delta);
       if (troop.attackOffsetTimer === 0) troop.attackOffset = 0;
       troop.attackSwingTimer = Math.max(0, troop.attackSwingTimer - delta);
       troop.attackSwing = troop.attackSwingTimer > 0 ? 1 - troop.attackSwingTimer / .32 : 0;
-    });
-    state.labels.forEach((label) => {
-      label.fallbackTime += delta;
-      const progress = clamp(label.fallbackTime / .95, 0, 1);
-      label.y -= delta * 72;
-      label.alpha = 1 - progress;
-      label.scale = .75 + progress * .37;
-    });
-    state.labels = state.labels.filter((label) => label.alpha > .02);
-    [...state.effects].forEach((effect) => {
-      effect.fallbackTime += delta;
-      if (effect.kind === "bossImpact") {
-        const progress = clamp(effect.fallbackTime / effect.duration, 0, 1);
-        effect.scale = .2 + progress * 1.35;
-        effect.alpha = 1 - progress;
-      } else if (effect.kind === "projectile") {
-        const progress = clamp(effect.fallbackTime / effect.duration, 0, 1);
-        effect.progress = progress;
-        effect.x = effect.startX + (effect.targetX - effect.startX) * progress;
-        effect.y = effect.startY + (effect.targetY - effect.startY) * progress;
-        effect.rotation = progress * Math.PI * 2;
-        effect.scale = .9 + progress * .25;
-        if (progress >= 1) effect.finish();
-      } else if (effect.kind === "shield") {
-        const progress = clamp(effect.fallbackTime / .34, 0, 1);
-        effect.scale = .72 + progress * .48;
-        effect.alpha = .8 * (1 - progress);
-      } else {
-        const progress = clamp(effect.fallbackTime / .58, 0, 1);
-        effect.scale = .25 + progress * 1.1;
-        effect.alpha = 1 - progress;
+      if (troop.status === "dying") {
+        troop.deathTime = (troop.deathTime || 0) + delta;
+        const p = clamp(troop.deathTime / .32, 0, 1);
+        troop.alpha = 1 - p;
+        troop.popScale = 1 - p * .8;
+        if (p >= 1) continue; // corpse fully faded: drop it (no array copy).
       }
-    });
-    state.effects = state.effects.filter((effect) => effect.alpha > .02 && !effect.finished);
+      troops[troopWrite++] = troop;
+    }
+    troops.length = troopWrite;
+
+    const labels = state.labels;
+    let labelWrite = 0;
+    for (let i = 0; i < labels.length; i += 1) {
+      const label = labels[i];
+      label.time += delta;
+      const p = clamp(label.time / label.duration, 0, 1);
+      if (p >= 1) continue;
+      const eased = easeOutQuad(p);
+      label.alpha = p < .12 ? p / .12 : 1 - (p - .12) / .88;
+      label.scale = .45 + eased * (label.endScale - .45);
+      label.x = label.startX + label.driftX * eased;
+      label.y = label.startY - label.rise * eased;
+      labels[labelWrite++] = label;
+    }
+    labels.length = labelWrite;
+
+    const effects = state.effects;
+    let write = 0;
+    for (let i = 0; i < effects.length; i += 1) {
+      const effect = effects[i];
+      effect.time += delta;
+      const duration = effect.duration || .58;
+      const p = clamp(effect.time / duration, 0, 1);
+      const eased = easeOutQuad(p);
+      switch (effect.kind) {
+        case "projectile": {
+          const t = easeInQuad(p);
+          effect.progress = p;
+          effect.x = effect.startX + (effect.targetX - effect.startX) * t;
+          effect.y = effect.startY + (effect.targetY - effect.startY) * t;
+          effect.rotation = p * Math.PI * 2;
+          effect.scale = .9 + p * .25;
+          if (p >= 1) {
+            effect.finished = true;
+            if (!state.matchOver) effect.onImpact?.();
+          }
+          break;
+        }
+        case "joinShow": {
+          if (!effect.landed) {
+            effect.progress = easeInQuad(p);
+            if (p >= 1) {
+              effect.landed = true;
+              effect.time = 0;
+              effect.duration = .6 + .5 + 1.55; // pop + hold + fade
+              spawnConfetti(effect.x, effect.y);
+            }
+          } else {
+            effect.pop = easeOutBack(clamp(effect.time / .6, 0, 1));
+            effect.ringSpin = clamp(effect.time / .9, 0, 1);
+            effect.life = clamp((effect.time - .5) / 1.55, 0, 1);
+            if (effect.time >= effect.duration) effect.finished = true;
+          }
+          effect.alpha = 1;
+          break;
+        }
+        case "claw": {
+          effect.progress = p;
+          effect.scale = .7 + p * .42;
+          effect.alpha = 1 - p;
+          break;
+        }
+        case "spawnAura": {
+          effect.progress = p;
+          effect.scale = .35 + p * (effect.endScale - .35);
+          effect.alpha = 1 - p;
+          break;
+        }
+        case "shield": {
+          effect.scale = .72 + eased * .48;
+          effect.alpha = .8 * (1 - p);
+          break;
+        }
+        default: {
+          effect.scale = (effect.startScale ?? .25) + eased * ((effect.endScale || 1.35) - (effect.startScale ?? .25));
+          effect.alpha = (effect.alpha0 ?? 1) * (1 - p);
+        }
+      }
+      if (effect.kind === "burst") effect.rotation += delta * 4;
+      if (!effect.finished && effect.alpha > .02) {
+        effects[write++] = effect;
+      }
+    }
+    effects.length = write;
   }
 
   function saveGameState() {
@@ -1026,7 +1412,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     const snapshot = {
       version: 1,
       gameStarted: state.gameStarted,
-      animationVideoPlayed: state.animationVideoPlayed,
+      animationVideoPlays: state.animationVideoPlays,
+      animationVideoPlayedUsers: [...state.animationVideoPlayedUsers],
       territoryRed: state.territoryRed,
       territoryBlue: state.territoryBlue,
       scoreRed: state.scoreRed,
@@ -1042,6 +1429,7 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       viewerProfiles: Object.fromEntries(state.viewerProfiles),
       giftCoinBalances: Object.fromEntries(state.giftCoinBalances),
       viewerLikeCounts: Object.fromEntries(state.viewerLikeCounts),
+      commentSpawnCooldowns: Object.fromEntries(state.commentSpawnCooldowns),
       pendingGiftSpawns,
       feed: state.feed.slice(0, 12),
       troops: state.troops
@@ -1107,7 +1495,10 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     const winner = saved.winner === "RED" || saved.winner === "BLUE" ? saved.winner : null;
     // Saves made before the start button existed represent an already running game.
     state.gameStarted = saved.gameStarted !== false;
-    state.animationVideoPlayed = saved.animationVideoPlayed === true;
+    state.animationVideoPlays = Math.max(0, Math.floor(readNumber(saved.animationVideoPlays, saved.animationVideoPlayed === true ? 1 : 0)));
+    state.animationVideoPlayedUsers = new Set(Array.isArray(saved.animationVideoPlayedUsers)
+      ? saved.animationVideoPlayedUsers.map((value) => String(value || "").toLowerCase()).filter(Boolean)
+      : []);
     state.matchOver = saved.matchOver === true && Boolean(winner);
     state.winner = state.matchOver ? winner : null;
     state.territoryRed = redRatio * TERRITORY_MAX_HP;
@@ -1129,7 +1520,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       .map(([key, profile]) => [key, {
         username: String(profile.username || "TikTok User").slice(0, 50),
         avatarUrl: safeAvatarUrl(profile.avatarUrl),
-        team: profile.team
+        team: profile.team,
+        joinedAt: Number.isFinite(Number(profile.joinedAt)) ? Number(profile.joinedAt) : undefined
       }]));
     const profileKeyByUsername = new Map([...state.viewerProfiles].map(([key, profile]) => [profile.username.toLowerCase(), key]));
     pendingGiftSpawns.length = 0;
@@ -1153,6 +1545,9 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     state.viewerLikeCounts = new Map(Object.entries(saved.viewerLikeCounts || {})
       .filter(([, count]) => Number.isFinite(Number(count)) && Number(count) >= 0 && Number(count) < 1000000)
       .map(([key, count]) => [key, Math.floor(Number(count))]));
+    state.commentSpawnCooldowns = new Map(Object.entries(saved.commentSpawnCooldowns || {})
+      .filter(([, time]) => Number.isFinite(Number(time)) && Number(time) > 0)
+      .map(([key, time]) => [String(key), Number(time)]));
     state.feed = Array.isArray(saved.feed)
       ? saved.feed.slice(0, 12).filter((item) => item && typeof item === "object").map((item) => ({
         team: item.team === "BLUE" ? "BLUE" : "RED",
@@ -1226,18 +1621,8 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
     if (state.troops.length) {
       state.nextId = Math.max(state.nextId, ...state.troops.map((troop) => troop.id + 1));
     }
+    // Unit idle/movement animation is handled centrally in the frame loop.
     if (!state.matchOver) updateTerritoryBar();
-    state.troops.forEach((troop) => {
-      if (state.gameStarted && gsap && !state.reducedMotion) {
-        if (troop.isBoss) gsap.to(troop, { frontPose: 0, duration: 0 });
-        gsap.to(troop, { rotation: randomBetween(-8, 8), duration: randomBetween(.32, .48), ease: "sine.inOut", repeat: -1, yoyo: true });
-        gsap.to(troop, { scaleY: 1.08, duration: .28, ease: "sine.inOut", repeat: -1, yoyo: true });
-        gsap.to(troop, { bobY: troop.isBoss ? 5 : 3, duration: troop.isBoss ? .56 : .38, ease: "sine.inOut", repeat: -1, yoyo: true });
-      }
-    });
-    if (state.matchOver && gsap && !state.reducedMotion) {
-      state.resetCall = gsap.delayedCall(state.roundResetTimer, resetRound);
-    }
   }
 
   function requestRender() {
@@ -1264,15 +1649,46 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       renderDirty = false;
       return;
     }
+    // Self-healing loop: if any step throws, the frame chain must still be
+    // rescheduled — otherwise the game freezes until a manual refresh.
+    try {
+      runFrame(now);
+    } catch (error) {
+      console.error("Faction War: frame error", error);
+    } finally {
+      if (state.gameStarted && !pendingAnimationFrame && !pendingGameTimer) requestRender();
+    }
+  }
+
+  function runFrame(now) {
     if (!state.lastTime) state.lastTime = now;
-    const delta = Math.min(.05, (now - state.lastTime) / 1000);
+    const rawDelta = Math.min(.05, (now - state.lastTime) / 1000);
     state.lastTime = now;
-    state.elapsed = (state.elapsed || 0) + delta;
-    state.troops.forEach((troop) => { troop.spawnAge += delta; });
-    updateFallbackAnimations(delta);
+    // Freeze the simulation briefly on big hits (hit-stop) while keeping the
+    // shake and particles alive so the impact frame lingers.
+    // Safety cap: never freeze longer than 150ms even if timestamps drift.
+    const frozen = hitStopUntil > now && hitStopUntil - now <= 150;
+    const delta = frozen ? 0 : rawDelta;
+    state.elapsed = (state.elapsed || 0) + rawDelta;
+    for (let i = 0; i < state.troops.length; i += 1) state.troops[i].spawnAge += rawDelta;
+    // Adaptive quality: heavy crowds lean on cheaper procedural animation.
+    state.heavyCombat = state.troops.length >= HEAVY_TROOP_COUNT
+      || state.effects.length >= HEAVY_EFFECT_COUNT;
+    updateMotionAnimations(delta);
+    updateTerritorySmoothing(rawDelta);
+    updateUnitVisualState(delta);
+    updateShake(rawDelta);
+    updateParticles(rawDelta);
+    if (frozen) {
+      renderer.render();
+      renderDirty = false;
+      requestRender();
+      return;
+    }
     updateBattleAttrition(delta);
     updateCombat(delta);
-    if (state.matchOver && (!gsap || state.reducedMotion)) {
+    updateHype();
+    if (state.matchOver) {
       state.roundResetTimer -= delta;
       if (state.roundResetTimer <= 0) resetRound();
     }

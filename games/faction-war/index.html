@@ -155,9 +155,33 @@
                 <input id="setting-like-troops-enabled" type="checkbox" checked />
                 <span><strong>Aktifkan tap like</strong><small>Like dihitung per username</small></span>
               </label>
+              <label class="settings-display-option">
+                <input id="setting-screen-shake" type="checkbox" />
+                <span><strong>Screen shake (getaran)</strong><small>Layar bergetar saat pukulan keras dan KO</small></span>
+              </label>
               <label class="settings-like-threshold">
                 <span>Like untuk 1 troop</span>
                 <div><input id="setting-likes-per-troop" type="number" min="1" max="1000000" step="1" /><small>like</small></div>
+              </label>
+              <label class="settings-like-threshold">
+                <span>Troop dari tap like</span>
+                <div>
+                  <select id="setting-like-troop-type" aria-label="Tipe troop dari tap like">
+                    <option value="knight">Knight</option>
+                    <option value="mage">Mage</option>
+                    <option value="beast">Beast</option>
+                    <option value="boss">Boss</option>
+                  </select>
+                  <small>bedakan dari gift</small>
+                </div>
+              </label>
+              <label class="settings-display-option">
+                <input id="setting-comment-troop-enabled" type="checkbox" checked />
+                <span><strong>Ketik 1/2 memunculkan pasukan</strong><small>Komentar tim memanggil 1 Knight</small></span>
+              </label>
+              <label class="settings-like-threshold">
+                <span>Cooldown pasukan komentar</span>
+                <div><input id="setting-comment-troop-cooldown" type="number" min="1" max="300" step="1" /><small>detik per orang</small></div>
               </label>
             </fieldset>
             <fieldset class="settings-display-options settings-audio-options">
@@ -220,7 +244,11 @@
           </section>
 
           <section class="settings-tab-panel animation-settings-panel" id="panel-animation" role="tabpanel" aria-labelledby="tab-animation" data-settings-panel="animation" hidden>
-            <p class="animation-video-note">Video tampil menutupi seluruh arena selama 10 detik saat pengirim dengan username yang cocok memberi gift. Video diputar sekali per ronde dan jatahnya direset setiap ronde baru dimulai setelah kemenangan. Format MP4/WebM, maksimal 100 MB; upload baru untuk username yang sama akan menggantikan video sebelumnya.</p>
+            <p class="animation-video-note">Video tampil menutupi seluruh arena selama 10 detik saat pengirim dengan username yang cocok memberi gift. Beberapa orang bisa menampilkan videonya di ronde yang sama secara berurutan, dengan kuota maksimal video per ronde di bawah; jatah direset setiap ronde baru. Satu username hanya sekali per ronde dan bisa memiliki lebih dari satu video — upload baru ditambahkan, dan salah satunya dipilih acak saat tampil. Format MP4/WebM, maksimal 100 MB per file.</p>
+            <label class="settings-like-threshold">
+              <span>Maksimal video per ronde</span>
+              <div><input id="setting-animation-videos-per-round" type="number" min="1" max="10" step="1" /><small>video</small></div>
+            </label>
             <div class="animation-video-upload-grid">
               <label class="settings-field">
                 <span>Username pengirim gift</span>

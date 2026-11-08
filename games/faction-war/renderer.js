@@ -432,17 +432,20 @@ export function createFactionWarRenderer({
     });
     ctx.restore();
 
-    // Heat flecks and ice glints.
+    // Heat flecks and ice glints (procedural twinkle; no shadowBlur — it is
+    // too expensive to run 64x per frame on weak devices).
+    const ambientTime = state.elapsed || 0;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
     state.ambient.forEach((particle) => {
       const isRed = particle.team === "RED";
-      ctx.beginPath();
-      ctx.fillStyle = isRed ? `rgba(255, 171, 82, ${particle.alpha})` : `rgba(153, 237, 255, ${particle.alpha})`;
-      ctx.shadowColor = isRed ? "#ff743a" : "#75e9ff";
-      ctx.shadowBlur = particle.radius * 3;
-      circlePath(particle.x, particle.y + particle.offsetY, particle.radius);
+      const twinkle = particle.baseAlpha + Math.sin(ambientTime * particle.speed + particle.phase) * .18;
+      ctx.globalAlpha = clamp(twinkle, .08, .85);
+      ctx.fillStyle = isRed ? "rgba(255, 171, 82, 1)" : "rgba(153, 237, 255, 1)";
+      circlePath(particle.x, particle.y + Math.sin(ambientTime * (particle.speed * .45) + particle.phase) * particle.offsetAmp, particle.radius);
       ctx.fill();
     });
-    ctx.shadowBlur = 0;
+    ctx.restore();
 
     // The bright seam reads like a frontline and keeps the two sides legible.
     const frontlineX = state.frontline.x;
@@ -503,6 +506,9 @@ export function createFactionWarRenderer({
     const blueName = uiSettings.blueTeam.toUpperCase();
     outlinedText(redName, 208, 261, fitTextSize(redName, 39, 260), "#fff0e8", { stroke: "#301a2c", lineWidth: 9 });
     outlinedText(blueName, 872, 261, fitTextSize(blueName, 39, 260), "#e9fbff", { stroke: "#192648", lineWidth: 9 });
+    // Roster avatars sit on the castle foot zone (above the 650px battle line).
+    drawTeamRoster("RED", 60, 340, 1);
+    drawTeamRoster("BLUE", 1020, 340, -1);
   }
 
   function drawTeamTroopHealth(team, x) {
@@ -580,7 +586,7 @@ export function createFactionWarRenderer({
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.shadowColor = TEAM[troop.team].light;
-    ctx.shadowBlur = 17;
+    ctx.shadowBlur = state.heavyCombat ? 0 : 17;
     ctx.strokeStyle = TEAM[troop.team].light;
     ctx.lineWidth = troop.isBoss ? 12 : 9;
 
@@ -614,7 +620,7 @@ export function createFactionWarRenderer({
     const walking = troop.status === "advancing";
     const stride = walking ? Math.sin(state.elapsed * 12 + troop.phase) : 0;
     const bob = troop.bobY + (walking ? Math.abs(stride) * 2.2 : 0);
-    const x = troop.x + troop.attackOffset;
+    const x = troop.x + troop.attackOffset + (troop.recoil || 0);
     const y = troop.y + bob;
     const imageKey = troop.isBoss
       ? (troop.team === "RED"
@@ -624,13 +630,20 @@ export function createFactionWarRenderer({
     const width = troop.isBoss ? BOSS_WIDTH : TROOP_WIDTH;
     const height = troop.isBoss ? BOSS_HEIGHT : TROOP_HEIGHT;
 
-    // Spawn flash and shadow establish the unit on the floor.
+    // Spawn flash and shadow establish the unit on the floor. shadowBlur is
+    // one of the most expensive canvas ops, so heavy crowds use a flat oval.
     ctx.save();
-    ctx.globalAlpha = .3;
-    ctx.fillStyle = team.color;
-    ctx.shadowColor = team.color;
-    ctx.shadowBlur = 24;
-    ctx.beginPath(); ctx.ellipse(x, troop.y + height * .36, (troop.isBoss ? 88 : 64) / layoutScaleX, 16, 0, 0, Math.PI * 2); ctx.fill();
+    if (state.heavyCombat) {
+      ctx.globalAlpha = .22;
+      ctx.fillStyle = team.color;
+      ctx.beginPath(); ctx.ellipse(x, troop.y + height * .36, (troop.isBoss ? 88 : 64) / layoutScaleX, 16, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.globalAlpha = .3;
+      ctx.fillStyle = team.color;
+      ctx.shadowColor = team.color;
+      ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.ellipse(x, troop.y + height * .36, (troop.isBoss ? 88 : 64) / layoutScaleX, 16, 0, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
 
     ctx.save();
@@ -653,6 +666,11 @@ export function createFactionWarRenderer({
       ctx.fillStyle = "#fff"; ctx.fillText(troop.isBoss ? "BOSS" : TROOP_NAMES[troop.type][0], 0, 0);
     } else {
       ctx.drawImage(sprite, -width / 2, -height / 2, width, height);
+      if (troop.hitFlash > 0) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(.85, troop.hitFlash * .8);
+        ctx.drawImage(sprite, -width / 2, -height / 2, width, height);
+      }
     }
     ctx.restore();
     drawAttackMotion(troop, x, y);
@@ -683,53 +701,102 @@ export function createFactionWarRenderer({
     return entry;
   }
 
-  function drawTroopAvatar(troop, x, centerY, username) {
-    const profile = troop.viewerKey ? state.viewerProfiles.get(troop.viewerKey) : null;
-    const avatarUrl = safeAvatarUrl(profile?.avatarUrl || troop.avatarUrl);
-    if (!troop.viewerKey && !avatarUrl) return;
-    const cached = loadAvatarImage(avatarUrl);
-    const radius = AVATAR_RADIUS;
-
+  function drawAvatarCircle(avatarUrl, username, team, radius, popScale = 1) {
     ctx.save();
-    ctx.translate(x, centerY);
     ctx.scale(1 / layoutScaleX, 1);
+    ctx.scale(popScale, popScale);
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(13, 16, 31, .96)";
     ctx.fill();
-
     ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, radius - 2, 0, Math.PI * 2);
     ctx.clip();
+    const cached = loadAvatarImage(avatarUrl);
     if (cached?.loaded) {
       ctx.drawImage(cached.image, -radius + 2, -radius + 2, (radius - 2) * 2, (radius - 2) * 2);
     } else {
-      ctx.fillStyle = TEAM[troop.team].dark;
+      ctx.fillStyle = TEAM[team].dark;
       ctx.fill();
       ctx.fillStyle = "#fff";
-      ctx.font = "900 30px Trebuchet MS, Arial";
+      ctx.font = `900 ${Math.round(radius * .85)}px Trebuchet MS, Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(username.slice(0, 1).toUpperCase() || "?", 0, 0);
+      ctx.fillText(String(username || "?").slice(0, 1).toUpperCase(), 0, 2);
     }
     ctx.restore();
-
     ctx.beginPath();
     ctx.arc(0, 0, radius - 1, 0, Math.PI * 2);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = TEAM[troop.team].color;
+    ctx.strokeStyle = TEAM[team].color;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // Team rosters: every viewer that joined this round gets a persistent avatar
+  // badge near their castle, so it is obvious who already entered.
+  function drawTeamRoster(team, originX, originY, dir) {
+    const profiles = [...state.viewerProfiles.entries()]
+      .filter(([, profile]) => profile.team === team)
+      .map(([key, profile]) => ({ key, ...profile }))
+      .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+    if (!profiles.length) return;
+    const radius = 52;
+    const slot = 110;
+    const maxPerRow = 4;
+    const visible = profiles.slice(-maxPerRow * 2);
+    const extra = profiles.length - visible.length;
+    ctx.save();
+    ctx.translate(originX, originY);
+    visible.forEach((profile, index) => {
+      const col = index % maxPerRow;
+      const row = Math.floor(index / maxPerRow);
+      const x = dir * col * slot;
+      const y = row * slot * 1.05;
+      // Pop-in animation for freshly joined members (first 0.6s after joining).
+      let pop = 1;
+      if (profile.joinedAt && !state.reducedMotion) {
+        const age = (Date.now() - profile.joinedAt) / 1000;
+        if (age < .6) pop = .2 + easeOutBack(clamp(age / .6, 0, 1)) * .8;
+      }
+      ctx.save();
+      ctx.translate(x, y);
+      drawAvatarCircle(profile.avatarUrl, profile.username, team, radius, pop);
+      ctx.restore();
+    });
+    ctx.restore();
+    if (extra > 0) {
+      outlinedText(`+${extra}`, originX + dir * maxPerRow * slot, originY + 40, 30, "#fff4c4", { lineWidth: 7, align: dir > 0 ? "left" : "right" });
+    }
+  }
+
+  function easeOutBack(t) {
+    const c1 = 1.70158; const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  function drawTroopAvatar(troop, x, centerY, username) {
+    const profile = troop.viewerKey ? state.viewerProfiles.get(troop.viewerKey) : null;
+    const avatarUrl = safeAvatarUrl(profile?.avatarUrl || troop.avatarUrl);
+    if (!troop.viewerKey && !avatarUrl) return;
+    ctx.save();
+    ctx.translate(x, centerY);
+    drawAvatarCircle(avatarUrl, username, troop.team, AVATAR_RADIUS);
     ctx.restore();
   }
 
   function drawTroopNameplate(troop) {
     if (troop.dead || (!uiSettings.showAvatar && !uiSettings.showUsername)) return;
+    // In heavy crowds nameplates are the single most expensive per-unit draw
+    // (rounded rect + text + avatar clip). Show them only for bosses and a
+    // small slice of units so the battle stays readable and fast.
+    if (state.heavyCombat && !troop.isBoss && (troop.id % 6) !== 0) return;
     const team = TEAM[troop.team];
     const walking = troop.status === "advancing";
     const stride = walking ? Math.sin(state.elapsed * 12 + troop.phase) : 0;
     const bob = troop.bobY + (walking ? Math.abs(stride) * 2.2 : 0);
-    const x = troop.x + troop.attackOffset;
+    const x = troop.x + troop.attackOffset + (troop.recoil || 0);
     const y = troop.y + bob;
     const username = String(troop.username || "Player");
     const usernameCharacters = Array.from(username);
@@ -758,7 +825,234 @@ export function createFactionWarRenderer({
   }
 
   function drawEffect(effect) {
-    if (effect.kind === "bossImpact") {
+    if (effect.kind === "joinShow") {
+      const team = TEAM[effect.team];
+      const p = clamp(effect.progress || 0, 0, 1);
+      if (!effect.landed) {
+        // Incoming comet: avatar streaks down from the castle corner with a
+        // fiery trail and lands on its roster badge spot.
+        const cx = effect.startX + (effect.x - effect.startX) * p;
+        const cy = effect.startY + (effect.y - effect.startY) * (0.3 * p + 0.7 * p * p);
+        const size = 30 + 60 * p;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (let i = 8; i >= 1; i -= 1) {
+          const tp = Math.max(0, p - i * .045);
+          const tx = effect.startX + (effect.x - effect.startX) * tp;
+          const ty = effect.startY + (effect.y - effect.startY) * (0.3 * tp + 0.7 * tp * tp);
+          const tr = Math.max(5, size - i * 4.5);
+          ctx.globalAlpha = .17 * (1 - i / 9);
+          ctx.fillStyle = i > 4 ? team.light : "#fff4c4";
+          ctx.beginPath(); ctx.ellipse(tx, ty, tr / layoutScaleX, tr, 0, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = .85;
+        const glow = ctx.createRadialGradient(cx, cy, 3, cx, cy, size * 2.2);
+        glow.addColorStop(0, "#fff9b0");
+        glow.addColorStop(.45, team.color);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.ellipse(cx, cy, size * 2.2 / layoutScaleX, size * 2.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.sin(p * 18) * .12);
+        drawAvatarCircle(effect.avatarUrl, effect.username, effect.team, size * .8);
+        ctx.restore();
+      } else {
+        // Landed: starburst flash, expanding shockwave, golden pulsing ring,
+        // avatar bouncing in, and a "JOINED!" tag that floats up and fades.
+        const pop = effect.pop || 0;
+        const ringSpin = effect.ringSpin || 0;
+        const life = effect.life || 0;
+        ctx.save();
+        ctx.translate(effect.x, effect.y);
+        if (ringSpin < 1) {
+          ctx.save();
+          ctx.globalAlpha = (1 - ringSpin) * .75;
+          ctx.strokeStyle = team.light;
+          ctx.lineWidth = 6;
+          ctx.shadowColor = team.color;
+          ctx.shadowBlur = 22;
+          const wave = 44 + ringSpin * 230;
+          ctx.beginPath(); ctx.ellipse(0, 0, wave / layoutScaleX, wave * .8, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+        }
+        if (pop < 1) {
+          // Starburst flash at the exact landing frame.
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          ctx.globalAlpha = (1 - pop) * .9;
+          ctx.translate(0, -24);
+          ctx.rotate(pop * .9);
+          ctx.fillStyle = "#fff9b0";
+          for (let i = 0; i < 10; i += 1) {
+            ctx.save();
+            ctx.rotate(i * Math.PI / 5);
+            const spike = (1 - pop) * 280;
+            ctx.beginPath();
+            ctx.moveTo(0, -12); ctx.lineTo(10, -22); ctx.lineTo(0, -22 - spike); ctx.lineTo(-10, -22);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+        // Golden rotating dashed ring around the new player.
+        ctx.save();
+        ctx.globalAlpha = 1 - life * .55;
+        ctx.strokeStyle = "#ffd34d";
+        ctx.shadowColor = "#ffd34d";
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = 6;
+        ctx.setLineDash([28, 16]);
+        ctx.lineDashOffset = -ringSpin * 170 - (state.elapsed || 0) * 50;
+        const pulse = 74 + Math.sin((state.elapsed || 0) * 9) * 4;
+        ctx.beginPath(); ctx.ellipse(0, 0, pulse / layoutScaleX, pulse, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.scale(pop, pop);
+        drawAvatarCircle(effect.avatarUrl, effect.username, effect.team, 60);
+        ctx.restore();
+        // Floating "JOINED!" tag above the avatar.
+        if (life < 1) {
+          const tagY = -110 - life * 52;
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, pop * 1.6) * (1 - life);
+          outlinedText("JOINED!", 0, tagY, 52, "#ffd34d", { lineWidth: 9, shadow: "rgba(0,0,0,.6)" });
+          const name = String(effect.username || "Player");
+          const chars = Array.from(name);
+          const short = chars.length > 14 ? `${chars.slice(0, 12).join("")}..` : name;
+          ctx.globalAlpha = Math.min(1, (pop - .2) * 2) * (1 - life);
+          outlinedText(`@${short}`, 0, tagY + 52, 30, team.light, { lineWidth: 7, shadow: "rgba(0,0,0,.55)" });
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+    } else if (effect.kind === "slash") {
+      const color = effect.team === "BLUE" ? "#b4f4ff" : "#ffca79";
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.scale(1 / layoutScaleX, 1);
+      ctx.rotate(effect.rotation || 0);
+      ctx.scale(effect.scale, effect.scale);
+      ctx.globalAlpha *= effect.alpha;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 11;
+      ctx.beginPath();
+      ctx.moveTo(-64, 46);
+      ctx.quadraticCurveTo(-6, -18, 66, -44);
+      ctx.stroke();
+      ctx.globalAlpha *= .6;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(-56, 62);
+      ctx.quadraticCurveTo(0, 0, 60, -22);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.kind === "claw") {
+      const color = effect.team === "BLUE" ? "#8cecff" : "#ff8a37";
+      const progress = effect.progress ?? 0;
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.scale(1 / layoutScaleX, 1);
+      ctx.scale(effect.scale, effect.scale);
+      ctx.globalAlpha *= effect.alpha;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 9;
+      for (let index = 0; index < 3; index += 1) {
+        const offset = (index - 1) * 34;
+        const reveal = clamp((progress - index * .12) / .55, 0, 1);
+        if (reveal <= 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(offset - 26, -70 * reveal);
+        ctx.quadraticCurveTo(offset + 8, -20, offset + 26, 70 * reveal);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (effect.kind === "burst") {
+      const color = effect.team === "BLUE" ? "#8cecff" : "#ffb17c";
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.scale(1 / layoutScaleX, 1);
+      ctx.rotate(effect.rotation || 0);
+      ctx.scale(effect.scale, effect.scale);
+      ctx.globalAlpha *= effect.alpha;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 16;
+      for (let index = 0; index < 8; index += 1) {
+        ctx.save();
+        ctx.rotate(index * Math.PI / 4);
+        ctx.beginPath();
+        ctx.moveTo(0, -14);
+        ctx.lineTo(7, -38);
+        ctx.lineTo(0, -62);
+        ctx.lineTo(-7, -38);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.beginPath();
+      circlePath(0, 0, 16);
+      ctx.fill();
+      ctx.restore();
+    } else if (effect.kind === "shockwave") {
+      const color = effect.team === "BLUE" ? "#b4f4ff" : "#ffca79";
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.scale(1 / layoutScaleX, 1);
+      ctx.scale(effect.scale, effect.scale);
+      ctx.globalAlpha *= effect.alpha;
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 10 / Math.max(.4, effect.scale);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 120, 40, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha *= .5;
+      ctx.lineWidth = 5 / Math.max(.4, effect.scale);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 84, 28, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.kind === "spawnAura") {
+      const color = effect.team === "BLUE" ? "#8cecff" : "#ff9a4f";
+      const style = effect.style || "knight";
+      const rayCount = style === "boss" ? 14 : style === "beast" ? 10 : style === "mage" ? 8 : 6;
+      const progress = effect.progress ?? 0;
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.scale(1 / layoutScaleX, 1);
+      ctx.rotate((effect.scale - .35) * .6);
+      ctx.scale(effect.scale, effect.scale);
+      ctx.globalAlpha *= effect.alpha;
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 74, 26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha *= .85;
+      ctx.lineWidth = 3;
+      for (let index = 0; index < rayCount; index += 1) {
+        const angle = index * (Math.PI * 2 / rayCount);
+        const length = (style === "boss" ? 96 : 74) * clamp(progress * 1.6, 0, 1);
+        const innerX = Math.cos(angle) * 30;
+        const innerY = Math.sin(angle) * 14 - 14;
+        ctx.beginPath();
+        ctx.moveTo(innerX, innerY);
+        ctx.lineTo(innerX + Math.cos(angle) * length, innerY + Math.sin(angle) * length * .55 - length * .35);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (effect.kind === "bossImpact") {
       const color = effect.team === "BLUE" ? "#8cecff" : "#ff9a4f";
       const radius = 112 * effect.scale;
       ctx.save();
@@ -838,17 +1132,69 @@ export function createFactionWarRenderer({
     });
   }
 
+  function drawHypeAuras() {
+    if (!state.hype) return;
+    const pulse = .5 + .5 * Math.sin((state.elapsed || 0) * 6);
+    [["RED", 225, 520], ["BLUE", 855, 520]].forEach(([team, cx, cy]) => {
+      if (!state.hype[team]) return;
+      const color = team === "RED" ? "255, 120, 60" : "90, 200, 255";
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = .16 + pulse * .12;
+      const glow = ctx.createRadialGradient(cx, cy, 30, cx, cy, 340);
+      glow.addColorStop(0, `rgba(${color}, .55)`);
+      glow.addColorStop(1, `rgba(${color}, 0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 340 / layoutScaleX, 340, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = .4 + pulse * .3;
+      ctx.strokeStyle = team === "RED" ? "#ffb17c" : "#8cecff";
+      ctx.lineWidth = 5;
+      ctx.setLineDash([26, 18]);
+      ctx.lineDashOffset = -(state.elapsed || 0) * 90;
+      ctx.beginPath(); ctx.moveTo(0, 448); ctx.lineTo(W, 448); ctx.stroke();
+      ctx.restore();
+    });
+  }
+
   function render() {
     ctx.clearRect(0, 0, W, H);
+    const shake = state.shake;
+    ctx.save();
+    if (shake && shake.intensity > 0) {
+      // Zoom slightly so the shake never exposes empty canvas edges.
+      ctx.translate(W / 2 + (shake.x || 0), H / 2 + (shake.y || 0));
+      ctx.scale(1.05, 1.05);
+      ctx.translate(-W / 2, -H / 2);
+    }
     drawBackground();
     drawHeader();
+    drawHypeAuras();
     drawGiftLegends();
     drawBattlefieldTrim();
     state.troops.forEach(drawTroop);
     state.effects.forEach(drawEffect);
+    drawParticles();
     drawFloatingLabels();
     state.troops.forEach(drawTroopNameplate);
+    ctx.restore();
     drawVictoryOverlay();
+  }
+
+  function drawParticles() {
+    if (!state.particles || !state.particles.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    state.particles.forEach((particle) => {
+      if (particle.alpha <= 0) return;
+      ctx.globalAlpha = particle.alpha;
+      ctx.fillStyle = particle.color;
+      ctx.beginPath();
+      ctx.ellipse(particle.x, particle.y, particle.radius / layoutScaleX, particle.radius, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
   }
 
   function drawVictoryOverlay() {

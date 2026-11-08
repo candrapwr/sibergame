@@ -51,6 +51,7 @@ const STATUS_IN_PROGRESS = new Set(["room_lookup", "connecting", "disconnecting"
 const LISTENER_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LISTENER_SESSION_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ANIMATION_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_ANIMATION_VIDEOS_PER_USERNAME = 5;
 const ANIMATION_VIDEO_EXTENSIONS = new Set([".mp4", ".webm"]);
 const ADMIN_COOKIE_NAME = "sibergame_admin";
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -421,7 +422,11 @@ function animationVideoDirectory() {
 }
 
 function animationVideoFilename(username, extension) {
-  return `${cleanUsername(username).toLowerCase()}${extension}`;
+  return `${cleanUsername(username).toLowerCase()}--${Date.now().toString(36)}${extension}`;
+}
+
+function animationVideoBaseFilename(username) {
+  return `${cleanUsername(username).toLowerCase()}--`;
 }
 
 async function listAnimationVideos(usernameFilter = "") {
@@ -433,7 +438,11 @@ async function listAnimationVideos(usernameFilter = "") {
     if (!entry.isFile()) continue;
     const extension = path.extname(entry.name).toLowerCase();
     if (!ANIMATION_VIDEO_EXTENSIONS.has(extension)) continue;
-    const username = path.basename(entry.name, extension);
+    const base = path.basename(entry.name, extension);
+    // New uploads use "<username>--<unique>". Legacy files are named exactly
+    // after the username and remain valid.
+    const separator = base.lastIndexOf("--");
+    const username = separator >= 0 ? base.slice(0, separator) : base;
     try { cleanUsername(username); }
     catch { continue; }
     if (usernameFilter && username.toLowerCase() !== usernameFilter.toLowerCase()) continue;
@@ -503,18 +512,31 @@ async function handleAnimationVideoRequest(request, response, requestUrl) {
     let username;
     try { username = cleanUsername(requestUrl.searchParams.get("username")); }
     catch (error) { return sendJson(response, 400, { error: error.message }); }
+    const usernameKey = username.toLowerCase();
     const directory = animationVideoDirectory();
     await fs.promises.mkdir(directory, { recursive: true });
-    const candidates = [...ANIMATION_VIDEO_EXTENSIONS].map((extension) => path.join(directory, animationVideoFilename(username, extension)));
 
     if (request.method === "DELETE") {
-      let removed = false;
-      for (const filePath of candidates) {
-        try { await fs.promises.unlink(filePath); removed = true; }
+      const requestedFilename = requestUrl.searchParams.get("filename")
+        ? path.basename(String(requestUrl.searchParams.get("filename")))
+        : "";
+      const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+      const owned = entries.filter((entry) => {
+        if (!entry.isFile()) return false;
+        const extension = path.extname(entry.name).toLowerCase();
+        if (!ANIMATION_VIDEO_EXTENSIONS.has(extension)) return false;
+        const base = path.basename(entry.name, extension);
+        const separator = base.lastIndexOf("--");
+        return (separator >= 0 ? base.slice(0, separator) : base).toLowerCase() === usernameKey;
+      });
+      let removed = 0;
+      for (const entry of owned) {
+        if (requestedFilename && entry.name !== requestedFilename) continue;
+        try { await fs.promises.unlink(path.join(directory, entry.name)); removed += 1; }
         catch (error) { if (error.code !== "ENOENT") throw error; }
       }
       return removed
-        ? sendJson(response, 200, { deleted: true, username })
+        ? sendJson(response, 200, { deleted: true, username, removed })
         : sendJson(response, 404, { error: "Video animasi untuk username ini tidak ditemukan." });
     }
 
@@ -534,6 +556,19 @@ async function handleAnimationVideoRequest(request, response, requestUrl) {
       return sendJson(response, 413, { error: "Ukuran video maksimal 100 MB." });
     }
 
+    const dirEntries = await fs.promises.readdir(directory, { withFileTypes: true });
+    const existingCount = dirEntries.reduce((count, entry) => {
+      if (!entry.isFile()) return count;
+      const entryExtension = path.extname(entry.name).toLowerCase();
+      if (!ANIMATION_VIDEO_EXTENSIONS.has(entryExtension)) return count;
+      const base = path.basename(entry.name, entryExtension);
+      const separator = base.lastIndexOf("--");
+      return (separator >= 0 ? base.slice(0, separator) : base).toLowerCase() === usernameKey ? count + 1 : count;
+    }, 0);
+    if (existingCount >= MAX_ANIMATION_VIDEOS_PER_USERNAME) {
+      return sendJson(response, 409, { error: `Maksimal ${MAX_ANIMATION_VIDEOS_PER_USERNAME} video per username. Hapus salah satu dulu.` });
+    }
+
     const tempPath = path.join(directory, `.upload-${randomUUID()}.tmp`);
     let size;
     try { size = await writeAnimationUpload(request, tempPath); }
@@ -545,11 +580,6 @@ async function handleAnimationVideoRequest(request, response, requestUrl) {
     const targetPath = path.join(directory, animationVideoFilename(username, extension));
     try {
       await fs.promises.rename(tempPath, targetPath);
-      for (const otherPath of candidates) {
-        if (otherPath === targetPath) continue;
-        try { await fs.promises.unlink(otherPath); }
-        catch (error) { if (error.code !== "ENOENT") throw error; }
-      }
     } catch (error) {
       await fs.promises.rm(tempPath, { force: true });
       throw error;

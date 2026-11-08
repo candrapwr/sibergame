@@ -22,7 +22,12 @@ export function setupFactionWarSettingsPanel({
   const bgMusicVolumeInput = document.getElementById("setting-bg-music-volume");
   const bgMusicVolumeValue = document.getElementById("setting-bg-music-volume-value");
   const likeTroopsEnabledInput = document.getElementById("setting-like-troops-enabled");
+  const screenShakeInput = document.getElementById("setting-screen-shake");
   const likesPerTroopInput = document.getElementById("setting-likes-per-troop");
+  const likeTroopTypeInput = document.getElementById("setting-like-troop-type");
+  const commentTroopEnabledInput = document.getElementById("setting-comment-troop-enabled");
+  const commentTroopCooldownInput = document.getElementById("setting-comment-troop-cooldown");
+  const animationVideosPerRoundInput = document.getElementById("setting-animation-videos-per-round");
   const giftCatalogStatusMessage = document.getElementById("gift-catalog-status");
   const settingsDescription = document.getElementById("settings-description");
   const settingsSaveStatus = document.getElementById("settings-save-status");
@@ -172,18 +177,19 @@ export function setupFactionWarSettingsPanel({
         removeButton.type = "button";
         removeButton.className = "animation-video-delete";
         removeButton.textContent = "Hapus";
-        removeButton.setAttribute("aria-label", `Hapus video untuk @${video.username}`);
+        removeButton.setAttribute("aria-label", `Hapus video ${video.filename} untuk @${video.username}`);
         removeButton.addEventListener("click", async () => {
           removeButton.disabled = true;
-          setAnimationVideoStatus("loading", `Menghapus video @${video.username}…`);
+          setAnimationVideoStatus("loading", `Menghapus video ${video.filename}…`);
           try {
             const deleteUrl = new URL("/api/games/faction-war/animation-videos", window.location.origin);
             deleteUrl.searchParams.set("username", video.username);
+            deleteUrl.searchParams.set("filename", video.filename);
             const deleteResponse = await fetch(`${deleteUrl.pathname}${deleteUrl.search}`, { method: "DELETE" });
             const deleteResult = await deleteResponse.json().catch(() => ({}));
             if (!deleteResponse.ok) throw new Error(deleteResult.error || "Video gagal dihapus.");
             animationVideosLoaded = false;
-            setAnimationVideoStatus("success", `Video @${video.username} dihapus.`);
+            setAnimationVideoStatus("success", `Video ${video.filename} dihapus.`);
             await loadAnimationVideos(true);
           } catch (error) {
             setAnimationVideoStatus("error", error.message || "Video gagal dihapus.");
@@ -480,7 +486,12 @@ export function setupFactionWarSettingsPanel({
     syncBgMusicVolumeValue();
     syncBgMusicEnabledControl();
     likeTroopsEnabledInput.checked = uiSettings.likeTroopsEnabled;
+    screenShakeInput.checked = uiSettings.screenShakeEnabled;
     likesPerTroopInput.value = uiSettings.likesPerTroop;
+    likeTroopTypeInput.value = uiSettings.likeTroopType;
+    commentTroopEnabledInput.checked = uiSettings.commentTroopEnabled;
+    commentTroopCooldownInput.value = uiSettings.commentTroopCooldown;
+    animationVideosPerRoundInput.value = uiSettings.animationVideosPerRound;
     fillGiftSettingsForm();
     settingsDialog.showModal();
     if (document.querySelector('[data-settings-tab].active')?.dataset.settingsTab === "animation") loadAnimationVideos(true);
@@ -510,7 +521,12 @@ export function setupFactionWarSettingsPanel({
       bgMusicEnabled: bgMusicEnabledInput.checked,
       bgMusicVolume: cleanSoundVolume(bgMusicVolumeInput.value, uiSettings.bgMusicVolume),
       likeTroopsEnabled: likeTroopsEnabledInput.checked,
+      screenShakeEnabled: screenShakeInput.checked,
       likesPerTroop: cleanPositiveCount(likesPerTroopInput.value, uiSettings.likesPerTroop),
+      likeTroopType: ["knight", "mage", "beast", "boss"].includes(likeTroopTypeInput.value) ? likeTroopTypeInput.value : DEFAULT_SETTINGS.likeTroopType,
+      commentTroopEnabled: commentTroopEnabledInput.checked,
+      commentTroopCooldown: Math.min(300, cleanPositiveCount(commentTroopCooldownInput.value, DEFAULT_SETTINGS.commentTroopCooldown)),
+      animationVideosPerRound: Math.min(10, cleanPositiveCount(animationVideosPerRoundInput.value, DEFAULT_SETTINGS.animationVideosPerRound)),
       giftMode: giftCatalogReady
         ? (giftModeOptions.find((option) => option.checked)?.value === "gift" ? "gift" : "coin")
         : (uiSettings.giftMode === "gift" ? "gift" : "coin"),

@@ -13,6 +13,34 @@ export function createFactionWarAudio({
   let finishSound = null;
   let backgroundMusic = null;
   let backgroundMusicNeedsGesture = false;
+  let musicFadeTimer = 0;
+  let hypeMusicBoost = false;
+  function musicVolume() {
+    const base = uiSettings.bgMusicVolume / 100;
+    return Math.min(1, base * (hypeMusicBoost ? 1.25 : 1));
+  }
+  function stopMusicFade() {
+    if (musicFadeTimer) window.clearInterval(musicFadeTimer);
+    musicFadeTimer = 0;
+  }
+  function fadeBackgroundMusicIn(durationMs = 1000) {
+    stopMusicFade();
+    if (!backgroundMusic || typeof Audio === "undefined") return;
+    if (sessionAnimationVideoActive || !uiSettings.bgMusicEnabled || !state.gameStarted) return;
+    backgroundMusic.volume = 0;
+    if (backgroundMusic.paused) {
+      const playback = backgroundMusic.play();
+      playback?.catch(() => { backgroundMusicNeedsGesture = true; });
+    }
+    const target = musicVolume();
+    const startedAt = Date.now();
+    musicFadeTimer = window.setInterval(() => {
+      if (!backgroundMusic) { stopMusicFade(); return; }
+      const progress = Math.min(1, (Date.now() - startedAt) / durationMs);
+      backgroundMusic.volume = target * progress;
+      if (progress >= 1) stopMusicFade();
+    }, 60);
+  }
   let sessionAnimationVideoActive = false;
   let sessionAnimationVideoTimer = 0;
   let sessionAnimationVideoGeneration = 0;
@@ -98,7 +126,7 @@ export function createFactionWarAudio({
       backgroundMusic.loop = true;
       backgroundMusic.preload = "auto";
     }
-    backgroundMusic.volume = uiSettings.bgMusicVolume / 100;
+    backgroundMusic.volume = musicVolume();
     if (!backgroundMusic.paused) return;
     try {
       const playback = backgroundMusic.play();
@@ -112,6 +140,7 @@ export function createFactionWarAudio({
 
   function stopBackgroundMusic() {
     backgroundMusicNeedsGesture = false;
+    stopMusicFade();
     if (!backgroundMusic) return;
     backgroundMusic.pause();
     backgroundMusic.currentTime = 0;
@@ -126,8 +155,15 @@ export function createFactionWarAudio({
     animationVideoPlayer.load();
     animationVideoOverlay.hidden = true;
     sessionAnimationVideoActive = false;
-    if (resumeMusic && state.gameStarted && !state.matchOver && uiSettings.bgMusicEnabled) startBackgroundMusic();
+    if (resumeMusic && state.gameStarted && !state.matchOver && uiSettings.bgMusicEnabled) fadeBackgroundMusicIn(1200);
     requestRender();
+  }
+
+  function animationVideoLimit() {
+    return Math.max(1, Math.min(10, Math.floor(Number(uiSettings.animationVideosPerRound) || 1)));
+  }
+  function hasAnimationVideoSlot() {
+    return state.animationVideoPlays < animationVideoLimit();
   }
 
   function playSessionAnimationVideo(usernameValue, knownVideo = null) {
@@ -139,31 +175,50 @@ export function createFactionWarAudio({
       || settingsOnlyMode
       || !state.gameStarted
       || state.matchOver
-      || state.animationVideoPlayed
+      || !hasAnimationVideoSlot()
+      || state.animationVideoPlayedUsers.has(usernameKey)
       || sessionAnimationVideoLookups.has(lookupKey)) return;
 
     sessionAnimationVideoLookups.add(lookupKey);
     const checkAndPlay = async () => {
       let playbackGeneration = 0;
+      const roundActive = () => state.gameStarted && !state.matchOver;
       try {
-        if (sessionToken !== sessionAnimationVideoGeneration || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
-        let matchingVideo = knownVideo;
-        if (!matchingVideo) {
+        if (!roundActive()) return;
+        if (!hasAnimationVideoSlot() || state.animationVideoPlayedUsers.has(usernameKey)) return;
+        let videos = [];
+        if (knownVideo?.url) {
+          videos = [knownVideo];
+        } else {
           const listUrl = new URL("/api/games/faction-war/animation-videos", window.location.origin);
           listUrl.searchParams.set("username", username);
           const response = await fetch(listUrl.pathname + listUrl.search, { cache: "no-store" });
           const result = await response.json().catch(() => ({}));
-          if (sessionToken !== sessionAnimationVideoGeneration || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
+          if (!roundActive()) return;
           if (!response.ok || !Array.isArray(result.videos)) return;
-          matchingVideo = result.videos.find((video) => String(video.username || "").toLowerCase() === usernameKey);
+          videos = result.videos.filter((video) => String(video.username || "").toLowerCase() === usernameKey && video.url);
         }
+        if (!videos.length) return;
+        const matchingVideo = videos[Math.floor(Math.random() * videos.length)];
         if (!matchingVideo?.url) return;
         const videoUrl = new URL(matchingVideo.url, window.location.origin);
         if (videoUrl.origin !== window.location.origin) return;
 
-        state.animationVideoPlayed = true;
+        // Wait for the overlay to be free so several gifters' videos play one
+        // after another instead of replacing each other mid-playback.
+        while (sessionAnimationVideoActive) {
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+          if (!roundActive()) return;
+        }
+        if (!roundActive() || !hasAnimationVideoSlot() || state.animationVideoPlayedUsers.has(usernameKey)) return;
+
+        state.animationVideoPlays += 1;
+        state.animationVideoPlayedUsers.add(usernameKey);
         saveGameState();
         playbackGeneration = ++sessionAnimationVideoGeneration;
+        // Claim the overlay immediately so queued waiters keep waiting while
+        // this playback loads.
+        sessionAnimationVideoActive = true;
         stopTroopSounds();
         stopFinishSound();
         stopBackgroundMusic();
@@ -171,7 +226,6 @@ export function createFactionWarAudio({
         animationVideoPlayer.loop = false;
         animationVideoPlayer.src = videoUrl.href;
         animationVideoOverlay.hidden = false;
-        sessionAnimationVideoActive = true;
         try { await animationVideoPlayer.play(); }
         catch {
           if (playbackGeneration !== sessionAnimationVideoGeneration) return;
@@ -183,7 +237,7 @@ export function createFactionWarAudio({
       } catch {
         if (playbackGeneration && playbackGeneration === sessionAnimationVideoGeneration) {
           stopSessionAnimationVideo();
-        } else if (!state.animationVideoPlayed && sessionToken === sessionAnimationVideoGeneration) {
+        } else if (!state.animationVideoPlayedUsers.has(usernameKey) && roundActive()) {
           console.warn(`Video animasi untuk @${username} gagal dimuat.`);
         }
       } finally {
@@ -194,18 +248,23 @@ export function createFactionWarAudio({
   }
 
   async function checkRestoredTroopAnimationVideo() {
-    if (!state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
-    const activeUsernames = new Set(state.troops
+    if (!state.gameStarted || state.matchOver || !hasAnimationVideoSlot()) return;
+    const activeUsernames = [...new Set(state.troops
       .filter((troop) => !troop.dead && troop.status !== "dying")
       .map((troop) => String(troop.username || "").trim().replace(/^@+/, "").toLowerCase())
-      .filter((username) => /^[a-z0-9._]{1,50}$/.test(username)));
-    if (!activeUsernames.size) return;
+      .filter((username) => /^[a-z0-9._]{1,50}$/.test(username)))];
+    if (!activeUsernames.length) return;
     try {
       const response = await fetch("/api/games/faction-war/animation-videos", { cache: "no-store" });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !Array.isArray(result.videos) || !state.gameStarted || state.matchOver || state.animationVideoPlayed) return;
-      const matchingVideo = result.videos.find((video) => activeUsernames.has(String(video.username || "").toLowerCase()));
-      if (matchingVideo) playSessionAnimationVideo(matchingVideo.username, matchingVideo);
+      if (!response.ok || !Array.isArray(result.videos) || !state.gameStarted || state.matchOver) return;
+      for (const usernameKey of activeUsernames) {
+        if (!hasAnimationVideoSlot()) break;
+        if (state.animationVideoPlayedUsers.has(usernameKey)) continue;
+        const matchingVideos = result.videos.filter((video) => String(video.username || "").toLowerCase() === usernameKey);
+        if (!matchingVideos.length) continue;
+        playSessionAnimationVideo(matchingVideos[0].username || usernameKey, matchingVideos[Math.floor(Math.random() * matchingVideos.length)]);
+      }
     } catch {
       // A later matching gift will retry the username lookup.
     }
@@ -236,8 +295,16 @@ export function createFactionWarAudio({
         stopBackgroundMusic();
         return;
       }
-      if (backgroundMusic) backgroundMusic.volume = uiSettings.bgMusicVolume / 100;
+      if (backgroundMusic) backgroundMusic.volume = musicVolume();
       if (state.gameStarted) startBackgroundMusic();
+    },
+    setHypeMusicBoost(active) {
+      const next = active === true;
+      if (next === hypeMusicBoost) return;
+      hypeMusicBoost = next;
+      if (backgroundMusic && !backgroundMusic.paused && !sessionAnimationVideoActive) {
+        backgroundMusic.volume = musicVolume();
+      }
     },
     get sessionAnimationVideoActive() { return sessionAnimationVideoActive; },
     get backgroundMusicNeedsGesture() { return backgroundMusicNeedsGesture; }
