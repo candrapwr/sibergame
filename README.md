@@ -74,6 +74,23 @@ Untuk menjalankan proses dengan PM2, install PM2 pada server lalu jalankan `pm2 
 6. Simpan state runtime dengan key `game-state:<listener-session>:<nama-game>` agar state antarstreamer tidak tercampur dan bisa dibersihkan saat sesi TikTok terkait berganti. Pengaturan game disimpan server-side melalui `/api/games/<nama-game>/settings` ke database `games/<nama-game>/data/settings.sqlite`, terpisah berdasarkan username TikTok dan dapat diubah tanpa sesi LIVE melalui mode pengaturan.
 7. Buat `README.md` di folder game tersebut untuk menjelaskan mekanik, alur event, pengaturan, state, dan asset khusus game. Dokumentasi global tetap untuk hub dan sistem bersama.
 
+## Catatan penting untuk game berikutnya (dipelajari dari Faction War)
+
+Hal-hal berikut sudah terbukti di Faction War dan sebaiknya langsung dipakai saat membuat game baru:
+
+- **Semantik event gift.** `coinValue` = harga diamond **per item** gift, `giftCount` = jumlah combo (`repeatCount`). Satu event gift combo 20 mawar berarti 20 item × 1C, bukan satu transaksi. Jangan menjumlahkan `coinValue × giftCount` lalu membelanjakan totalnya sekaligus — penonton mengharapkan efek **per item** (mis. 20 unit murah, bukan 1 unit hasil gabungan saldo). Kalau pakai saldo, konversi tiap item secara terpisah dengan tukar-prioritas-termahal dan sisakan leftover antar-event.
+- **Loop rAF harus tahan-error.** Bungkus badan frame dengan `try/catch/finally` dan jadwalkan ulang di `finally`. Satu exception di satu frame tanpa reschedule = game beku total dan penonton hanya melihat layar diam (harus refresh).
+- **Jangan buat animasi per-objek dengan GSAP.** Tween GSAP per objek (satu per efek/label/unit) membuat ribuan tween aktif saat ramai, dan `onComplete` yang memanggil `array.filter(...)` menyalin array penuh puluhan kali per detik (GC thrash → melambat → tersendat). Pakai **satu updater terpusat** yang memajukan field `time` semua objek tiap frame dan prune in-place (write-index, bukan `filter`).
+- **Loop simulasi tidak boleh mengalokasikan.** Scan target O(N²) dengan `filter` + `sort` per unit per frame langsung terasa pada 50+ unit. Pakai loop indeks dan scratch buffer reuse.
+- **Beri batas semua hal yang tumbuh:** jumlah unit, efek, label, partikel. Saat banjir spawn, lipat unit tertua secara senyap (tanpa partikel/shake) agar tidak memicu badai VFX tambahan.
+- **`shadowBlur` canvas sangat mahal.** Matikan (atau ganti flat glow) saat beban berat; batasi juga draw per-unit seperti nameplate/avatar. Terapkan adaptive quality dengan ambang jumlah unit/efek.
+- **Jangan campur `Date.now()` dan `performance.now()`.** Timestamp callback rAF memakai `performance.now()`. Hit-stop/freeze yang membandingkan dengan `Date.now()` membuat delta beku permanen (game berhenti tanpa error). Beri juga batas maksimum durasi freeze.
+- **Screen shake default nonaktif.** Sebagian penonton pusing; jadikan toggle eksplisit di pengaturan.
+- **Komentar join = spawn unit.** Tester LIVE mengharapkan komentar 1/2 bukan hanya pindah tim tapi langsung memunculkan troop, dengan cooldown per viewer agar spam tidak memenuhi layar.
+- **Bedakan sumber spawn di visual/feed.** Tap-like dan gift menghasilkan unit berbeda (tipe bisa diatur, label sumber di feed) supaya penonton melihat aksi mereka berpengaruh.
+- **Video animasi per orang, bukan per ronde.** Kuota per ronde (antrian, default 3) dan satu username bisa punya beberapa file (`<username>--<kode>.mp4`); jangan habiskan jatah satu ronde oleh satu orang.
+- **Simpan identitas join per ronde** (`joinedAt`, penanda fx) di state sehingga refresh tidak mengulang animasi join atau kehilangan roster.
+
 ## Dokumentasi game
 
 - [Faction War — dokumentasi teknis](games/faction-war/README.md): entry point, mekanik pertempuran, statistik troop, pemetaan event TikTok, pengaturan, penyimpanan state, dan asset.

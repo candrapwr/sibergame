@@ -1214,21 +1214,30 @@ import { setupFactionWarSettingsPanel } from "./settings-panel.js";
       } else {
         rememberViewer(event, team, userKey);
       }
+      // `coinValue` is the PER-ITEM diamond price from the listener catalog and
+      // `giftCount` is the combo repeat count. Convert each gift item
+      // individually with greedy change: a 20x rose combo (1C each) must yield
+      // 20 cheap units, never one pooled 20C unit. Only leftovers roll over.
       const coinValue = Math.max(0, Number(event.coinValue) || 0);
       if (coinValue <= 0) {
         saveGameState();
         return false;
       }
-      let balance = (state.giftCoinBalances.get(userKey) || 0) + coinValue * Math.max(1, Number(event.giftCount) || 1);
+      const itemCount = clamp(Math.floor(Number(event.giftCount) || 1), 1, 100);
+      let balance = state.giftCoinBalances.get(userKey) || 0;
       let spawned = 0;
-      while (spawned < 50) {
-        const affordableType = GIFT_UNIT_TYPES
-          .filter((type) => uiSettings.coinCosts[type] <= balance)
-          .sort((a, b) => uiSettings.coinCosts[b] - uiSettings.coinCosts[a])[0];
-        if (!affordableType) break;
-        balance -= uiSettings.coinCosts[affordableType];
-        enqueueGiftSpawn(team, affordableType, username, giftName, event);
-        spawned += 1;
+      const unitCosts = GIFT_UNIT_TYPES
+        .slice()
+        .sort((a, b) => uiSettings.coinCosts[b] - uiSettings.coinCosts[a]);
+      for (let item = 0; item < itemCount; item += 1) {
+        balance += coinValue;
+        while (spawned < 50) {
+          const affordableType = unitCosts.find((type) => uiSettings.coinCosts[type] <= balance);
+          if (!affordableType) break;
+          balance -= uiSettings.coinCosts[affordableType];
+          enqueueGiftSpawn(team, affordableType, username, giftName, event);
+          spawned += 1;
+        }
       }
       state.giftCoinBalances.set(userKey, balance);
       saveGameState();
