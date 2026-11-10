@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1220" />
+    <title>Drag Race — Live Runner</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="boot.js"></script>
+  </head>
+  <body>
+    <section class="asset-loader" id="game-asset-loader" role="status" aria-live="polite" aria-busy="true">
+      <div class="asset-loader-shell">
+        <h1>🏃 Drag Race</h1>
+        <p id="asset-loader-message">Memuat lintasan dan pelari…</p>
+        <div class="asset-loader-track"><span id="asset-loader-bar"></span></div>
+        <span id="asset-loader-count">0 / 0 ASSET</span>
+      </div>
+    </section>
+
+    <main class="app-shell">
+      <section class="stage" aria-label="Lintasan Drag Race">
+        <canvas id="game-canvas" width="1920" height="1080" aria-label="Balapan Drag Race"></canvas>
+      </section>
+
+      <div class="bottom-base" role="group" aria-label="Kontrol game">
+        <div class="bottom-base-inner">
+          <button class="dock-action back" id="back-to-dashboard" type="button" title="Keluar dari game">
+            <span class="action-icon">⇥</span><span class="action-label">Keluar</span>
+          </button>
+          <button class="dock-action start" id="start-game" type="button" title="Mulai balapan">
+            <span class="action-icon">▶</span><span class="action-label">Mulai</span>
+          </button>
+          <button class="dock-action reset" id="reset-game" type="button" title="Reset game">
+            <span class="action-icon">↻</span><span class="action-label">Reset</span>
+          </button>
+          <div class="dock-divider" aria-hidden="true"></div>
+          <button class="dock-sim" id="add-bot" type="button" title="Tambah 1 pemain bot">🤖 +1</button>
+          <span class="sim-extra" id="sim-extra">
+            <button class="dock-sim" id="sim-boost-1" type="button" title="Simulasi 100 tap/love → Boost 1 (debu kaki, tanpa VFX)">💨B1</button>
+            <button class="dock-sim" id="sim-boost-2" type="button" title="Kirim gift boost level 2 (flame besar)">🔥B2</button>
+            <button class="dock-sim" id="sim-boost-3" type="button" title="Kirim gift boost level 3 (streaks biru)">🌠B3</button>
+            <button class="dock-sim" id="sim-boost-4" type="button" title="Kirim gift boost level 4 (lightning ungu)">⚡B4</button>
+            <button class="dock-sim" id="sim-boost-5" type="button" title="Kirim gift boost level 5 (nova emas)">🌟B5</button>
+            <button class="dock-sim" id="toggle-name" type="button" title="Toggle label nama pemain di trek (auto → on → off)">🏷️ Auto</button>
+          </span>
+          <button class="dock-sim" id="open-settings" type="button" title="Pengaturan game">⚙️</button>
+          <button class="dock-sim sim-toggle" id="toggle-sim" type="button" title="Buka/tutup tool simulasi (collapse)">▸</button>
+        </div>
+      </div>
+
+      <div class="settings-scrim" id="settings-scrim" hidden></div>
+      <div class="settings-panel" id="settings-panel" role="dialog" aria-label="Pengaturan game" hidden>
+        <div class="settings-head">
+          <div class="settings-tabs" role="tablist">
+            <button class="settings-tab is-active" id="tab-general" type="button" role="tab">UMUM</button>
+            <button class="settings-tab" id="tab-gift" type="button" role="tab">GIFT</button>
+          </div>
+          <button class="settings-close" id="close-settings" type="button" title="Tutup">✕</button>
+        </div>
+        <div class="settings-body" id="settings-general">
+          <div class="set-group-label">Balapan</div>
+          <label class="set-row">
+            <span>Jarak lintasan</span>
+            <span class="set-unit"><input type="number" id="set-finish-m" min="500" max="20000" step="100" /> m</span>
+          </label>
+          <label class="set-row set-toggle">
+            <span>Gabung di tengah race</span>
+            <input type="checkbox" id="set-mid-join" />
+          </label>
+          <label class="set-row set-toggle">
+            <span>Batas waktu ronde (200 dtk)</span>
+            <input type="checkbox" id="set-round-timeout" />
+          </label>
+          <div class="set-group-label">Tampilan</div>
+          <label class="set-row">
+            <span>Plat nama pemain</span>
+            <select id="set-nameplate">
+              <option value="on">Selalu tampil</option>
+              <option value="auto">Otomatis (sembunyi saat sempit)</option>
+              <option value="off">Sembunyi</option>
+            </select>
+          </label>
+          <label class="set-row set-toggle">
+            <span>Minimap (atas)</span>
+            <input type="checkbox" id="set-minimap" />
+          </label>
+          <label class="set-row set-toggle">
+            <span>Leaderboard (kiri)</span>
+            <input type="checkbox" id="set-leaderboard" />
+          </label>
+          <label class="set-row set-toggle">
+            <span>Kamera LOCAT (tanpa geser halus)</span>
+            <input type="checkbox" id="set-cam-snap" />
+          </label>
+          <div class="set-group-label">Musik</div>
+          <label class="set-row set-toggle">
+            <span>Musik latar (BGM)</span>
+            <input type="checkbox" id="set-bgm" />
+          </label>
+          <label class="set-row">
+            <span>Volume musik</span>
+            <input type="range" id="set-bgm-vol" min="0" max="100" step="5" />
+          </label>
+        </div>
+        <div class="settings-body" id="settings-gift" hidden>
+          <div class="set-hint">💨 B1: tiap 💗 tap ATAU gift 🪙 senilai ambangnya. B2–B5: gift 🪙 senilai ambang per-unit. Ikon kiri = gambar VFX boost (baku).</div>
+          <div class="gift-rows" id="gift-rows"></div>
+        </div>
+      </div>
+      <div class="help-scrim" id="help-scrim" hidden></div>
+      <div class="help-modal" id="help-modal" role="dialog" aria-label="Panduan game" hidden>
+        <div class="help-head">
+          <div class="help-title">🏁 <b>DRAG RACE</b> — PANDUAN</div>
+          <button class="help-close" id="help-close" type="button" title="Tutup">✕</button>
+        </div>
+        <div class="help-tabs">
+          <button class="help-tab is-active" id="help-tab-play" type="button">🎮 CARA MAIN</button>
+          <button class="help-tab" id="help-tab-set" type="button">⚙️ CARA SETING</button>
+        </div>
+        <div class="help-body" id="help-body-play">
+          <div class="help-card">
+            <div class="help-card-title">🏃 Cara ikut balapan</div>
+            <ul>
+              <li><b>Komentar</b> <code>join</code> atau <code>gabung</code> di live → jadi pemain</li>
+              <li><b>Kirim gift</b> ≥ 🪙 ambang B1 (panel ⚙️ → GIFT) → langsung ikut + dapat boost</li>
+              <li><b>Tap 💗</b> sampai jumlah setting (default 100) → ikut + Boost 1</li>
+            </ul>
+          </div>
+          <div class="help-card">
+            <div class="help-card-title">🚀 Boost B1–B5</div>
+            <ul>
+              <li>B1 💨 dari <b>tap/love</b> atau gift kecil · B2 🔥 B3 🌠 B4 ⚡ B5 🌟 dari <b>gift</b> makin mahal makin kencang</li>
+              <li>Boost sejenis beruntun = <b>durasi nambah</b>, kecepatan tetap</li>
+              <li>Kecepatan tiap pelari <b>naik-turun</b> selama lari — posisi bisa saling salip</li>
+            </ul>
+          </div>
+          <div class="help-card">
+            <div class="help-card-title">🏆 Finish</div>
+            <ul>
+              <li>3 besar naik <b>podium</b> dengan foto profil lingkaran</li>
+              <li>Klik avatar di <b>minimap</b> / nama di <b>leaderboard</b> untuk kunci kamera</li>
+            </ul>
+          </div>
+        </div>
+        <div class="help-body" id="help-body-set" hidden>
+          <div class="help-card">
+            <div class="help-card-title">⚙️ Panel Pengaturan (tombol ⚙️ di dock)</div>
+            <ul>
+              <li><b>UMUM</b>: jarak lintasan, join tengah race, plat nama, minimap, leaderboard, musik & volume</li>
+              <li><b>GIFT</b>: ambang 💗/🪙 tiap boost B1–B5 — nilai tersimpan otomatis</li>
+            </ul>
+          </div>
+          <div class="help-card">
+            <div class="help-card-title">🕹️ Dock bawah (muncul saat mouse ke area bawah)</div>
+            <ul>
+              <li>⇥ Keluar · ▶ Mulai (harus ada pemain dulu) · ↻ Reset · 🤖 +1 bot (mode uji)</li>
+              <li><b>▸</b> kanan bawah = buka tool simulasi 💨B1–🌟B5 & 🏷️ nama · <b>⚙️</b> = pengaturan</li>
+            </ul>
+          </div>
+        </div>
+        <div class="help-foot">
+          <label class="help-remember"><input type="checkbox" id="help-dont-show" /> Jangan tampilkan lagi</label>
+          <button class="help-go" id="help-start" type="button">SIAP, GAS! 🏁</button>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

@@ -15,6 +15,25 @@ const games = [
       redTroop: "games/faction-war/assets/images/troop_red_knight.png",
       blueTroop: "games/faction-war/assets/images/troop_blue_knight.png"
     }
+  },
+  {
+    id: "drag-race",
+    title: "Drag Race",
+    description: "Balapan antar-penonton. Kirim komentar untuk bergabung jadi pelari, gift untuk boost kecepatan, dan like untuk speed burst. Yang pertama melewati garis finis jadi juara — podium 3 besar.",
+    icon: "🏃",
+    status: "Siap dimainkan",
+    entry: "games/drag-race/index.html",
+    accent: "rgba(255, 160, 60, .22)",
+    cover: {
+      type: "race",
+      skyline: "games/drag-race/assets/bg/kampung-rooftops-strip.png",
+      ground: "games/drag-race/assets/track/grass-ground-strip.png",
+      runners: [
+        "games/drag-race/assets/characters/chibi-gato.png",
+        "games/drag-race/assets/characters/ninja-black.png",
+        "games/drag-race/assets/characters/athlete-girl-blue-jersey.png"
+      ]
+    }
   }
 ];
 
@@ -23,16 +42,30 @@ const count = document.getElementById("game-count");
 
 count.textContent = `${games.length} game`;
 list.innerHTML = games.map((game) => {
-  const coverStyle = game.cover
-    ? `; --game-red-base: url('${game.cover.redBase}'); --game-blue-base: url('${game.cover.blueBase}')`
-    : "";
-  const coverUnits = game.cover?.redTroop && game.cover?.blueTroop
-    ? `<img class="game-card-cover-unit red" src="${game.cover.redTroop}" alt="" /><span class="game-card-cover-vs">VS</span><img class="game-card-cover-unit blue" src="${game.cover.blueTroop}" alt="" />`
-    : `<span class="game-card-cover-fallback">${game.icon}</span>`;
+  const coverStyle = game.cover?.type === "race"
+    ? `; --race-skyline: url('${game.cover.skyline}'); --race-ground: url('${game.cover.ground}')`
+    : game.cover
+      ? `; --game-red-base: url('${game.cover.redBase}'); --game-blue-base: url('${game.cover.blueBase}')`
+      : "";
+  let coverUnits, coverTag = "LIVE BATTLE";
+  if (game.cover?.type === "race") {
+    coverTag = "LIVE RACE";
+    const depths = [
+      { cls: "far", src: game.cover.runners[0] },
+      { cls: "mid", src: game.cover.runners[1] },
+      { cls: "near", src: game.cover.runners[2] }
+    ];
+    coverUnits = `<span class="speed-lines"></span>${depths.map((d) => `<img class="game-card-cover-runner ${d.cls}" src="${d.src}" alt="" />`).join("")}
+      <img class="game-card-cover-gate" src="games/drag-race/assets/track/finish-checkered-gate.png" alt="" />`;
+  } else if (game.cover?.redTroop && game.cover?.blueTroop) {
+    coverUnits = `<img class="game-card-cover-unit red" src="${game.cover.redTroop}" alt="" /><span class="game-card-cover-vs">VS</span><img class="game-card-cover-unit blue" src="${game.cover.blueTroop}" alt="" />`;
+  } else {
+    coverUnits = `<span class="game-card-cover-fallback">${game.icon}</span>`;
+  }
   return `
-  <article class="game-card" style="--accent-glow: ${game.accent}${coverStyle}">
+  <article class="game-card${game.cover?.type === "race" ? " game-card--race" : ""}" style="--accent-glow: ${game.accent}${coverStyle}">
     <div class="game-card-cover" aria-hidden="true">
-      <span class="game-card-cover-tag">LIVE BATTLE</span>
+      <span class="game-card-cover-tag">${coverTag}</span>
       ${coverUnits}
     </div>
     <div class="game-card-body">
@@ -42,7 +75,7 @@ list.innerHTML = games.map((game) => {
       </div>
       <h3>${game.title}</h3>
       <p>${game.description}</p>
-      <a href="${game.entry}" data-game-window="${game.id}" aria-label="Buka ${game.title} di jendela baru" title="Buka ${game.title} di jendela game">Buka game <span aria-hidden="true">↗</span></a>
+      <a href="${game.entry}" data-game-window="${game.id}" aria-label="Buka ${game.title}" title="Buka ${game.title}">Buka game <span aria-hidden="true">→</span></a>
     </div>
   </article>
 `;
@@ -53,14 +86,7 @@ list.addEventListener("click", (event) => {
   if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
   event.preventDefault();
-  const width = window.screen.availWidth || 1440;
-  const height = window.screen.availHeight || 900;
-  const features = [
-    "popup=yes", "toolbar=no", "location=no", "menubar=no", "status=no", "scrollbars=no", "resizable=yes",
-    `width=${width}`, `height=${height}`, "left=0", "top=0"
-  ].join(",");
+  // Buka di TAB/JENDELA YANG SAMA (dulu popup window.open fullscreen) — sesuai preferensi user.
   const target = addListenerSession(link.href, getListenerSessionId());
-  const gameWindow = window.open(target.href, `game-window-${link.dataset.gameWindow}-${getListenerSessionId()}`, features);
-  if (gameWindow) gameWindow.focus();
-  else window.location.assign(target.href);
+  window.location.assign(target.href);
 });
