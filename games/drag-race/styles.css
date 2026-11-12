@@ -278,6 +278,39 @@ button { font: inherit; }
 
 .settings-body { padding: 6px 18px 18px; }
 
+.settings-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 18px 14px;
+  background: linear-gradient(180deg, transparent, #0d1424 35%);
+  border-top: 1px solid rgba(255, 255, 255, .06);
+}
+
+.settings-save {
+  padding: 9px 22px;
+  border: 1px solid rgba(255, 208, 138, .45);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #ffb347, #e08a1e);
+  color: #23150a;
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(255, 179, 71, .28), inset 0 1px 0 rgba(255, 255, 255, .4);
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.settings-save:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 7px 18px rgba(255, 179, 71, .4), inset 0 1px 0 rgba(255, 255, 255, .4); }
+.settings-save:active { transform: translateY(1px) scale(.98); }
+.settings-save.is-saved { animation: save-pop .45s ease; }
+@keyframes save-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.07); box-shadow: 0 0 22px rgba(142, 240, 168, .55); }
+  100% { transform: scale(1); }
+}
+
 .set-group-label {
   margin: 16px 0 4px;
   color: #7fa3d8;

@@ -55,6 +55,11 @@
             <span>Jarak lintasan</span>
             <span class="set-unit"><input type="number" id="set-finish-m" min="500" max="20000" step="100" /> m</span>
           </label>
+          <label class="set-row">
+            <span>Kata kunci komentar</span>
+            <input type="text" id="set-join-keywords" maxlength="60" placeholder="1, gas, lari, ikut" />
+          </label>
+          <p class="set-hint">Pisahkan dengan koma. Ganti bila kata diblok filter TikTok.</p>
           <label class="set-row set-toggle">
             <span>Gabung di tengah race</span>
             <input type="checkbox" id="set-mid-join" />
@@ -102,6 +107,9 @@
           <div class="set-hint">💨 B1: tiap 💗 tap ATAU dukungan kecil senilai ambangnya. Nilai dukungan DIPECAH ke ambang (greedy, maks 1× tiap level) — mis. tingkat 25 = B4(20)+B2(5): speed dijumlah, durasi tiap level sendiri.</div>
           <div class="gift-rows" id="gift-rows"></div>
         </div>
+        <div class="settings-foot">
+          <button class="settings-save" id="save-settings" type="button" title="Simpan semua pengaturan">💾 Simpan</button>
+        </div>
       </div>
       <div class="help-scrim" id="help-scrim" hidden></div>
       <div class="help-modal" id="help-modal" role="dialog" aria-label="Panduan game" hidden>
@@ -117,7 +125,7 @@
           <div class="help-card">
             <div class="help-card-title">🏃 GABUNG — 3 CARA</div>
             <div class="help-steps">
-              <div class="help-step"><span class="help-step-n">1</span><span><b>Ketik</b> <code>join</code> / <code>gabung</code> di komentar</span></div>
+              <div class="help-step"><span class="help-step-n">1</span><span><b>Ketik</b> <code id="help-join-keywords">1 / gas / lari</code> di komentar</span></div>
               <div class="help-step"><span class="help-step-n">2</span><span><b>Kirim dukungan</b> ⭐ → langsung lari + boost</span></div>
               <div class="help-step"><span class="help-step-n">3</span><span><b>Tap 💗</b> 100× → ikut lari + Boost 1</span></div>
             </div>

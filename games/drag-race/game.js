@@ -39,6 +39,7 @@ const CONFIG = {
   COUNTDOWN_SECONDS: 3,              // lama hitung mundur sebelum mulai
   JOIN_POP_MS: 620,                  // durasi animasi "pop masuk" pemain baru (ms)
   MID_RACE_JOIN: true,               // true (default): penonton boleh gabung SAAT race berjalan — masuk di posisi paling belakang; false: harus tunggu ronde berikutnya
+  JOIN_KEYWORDS: ["1", "gas", "lari", "ikut"],   // komentar kunci buat ikut — bisa diubah di panel ⚙️; "gabung"/"join" DIBLOK filter TikTok (komentar langsung dihapus)
   JOIN_BOOST_CAM_GRACE_MS: 4000,     // boost dalam N dtk sejak join TIDAK menyorot kamera (join-gift/tap = boost pertama, jangan bikin kamera kesorot)
   MID_JOIN_FOCUS_SECONDS: 2.5,       // lama kamera fokus ke pemain baru yang join di tengah race
   BOOST_COMBO_MAX_SECONDS: 25,       // batas durasi boost hasil combo (detik dasar × jumlah combo, di-cap di sini)
@@ -75,7 +76,7 @@ const CONFIG = {
   CAM_ROAM_EVERY_MIN: 12,            // jeda acak antar-roam (detik) — jarang agar tidak pusing
   CAM_ROAM_EVERY_MAX: 20,
   CAM_ROAM_SMOOTHING: 2.0,           // pan roam sangat lembut (vs cutaway boost yang galak)
-  CAM_ROAM_MAX_BEHIND: 1400,         // roam hanya ke pelari ≤1 layar di belakang pemimpin
+  CAM_ROAM_MAX_BEHIND: 6000,         // roam boleh sampai ±4 layar di belakang pemimpin (dulu 1400→2900: kandidat nyaris selalu pelari 2 — paket cepat melebar jauh)
   CAM_ROAM_MAX_SPEED: 1200,          // cap kecepatan pan kamera px dunia/s selama roam & transisi balik (dulu 620 — terlalu lambat utk jarak jauh)
   CAM_LOCK_SMOOTHING: 6,             // kehalusan kamera saat terkunci ke pemain (mode manual)
   CAM_CUTAWAY_SMOOTHING: 12,         // saat cutaway kamera FOLLOW penuh ke pemain yg di-boost (tinggi = lebih galak mengejar)
@@ -422,7 +423,7 @@ function startRace() {
   if (state.runners.length === 0) {
     // Lobi kosong TIDAK lagi diisi bot otomatis — start harus ada pemain dulu
     // (join lewat komentar "1" / tombol + Viewer / + N Bot).
-    pushToast("⏳ Add player dulu — kirim komentar join/gabung atau tombol ➕", "#ff8a7a");
+    pushToast(`⏳ Add player dulu — via komentar, gift, atau tombol ➕`, "#ff8a7a");
     return;
   }
   state.phase = "countdown";
@@ -666,6 +667,20 @@ function grantBoost(runner, lvl, combo, who, now = performance.now()) {
 
 // Gabung pemain dari event apa pun (komentar kunci / gift ≥ B1 / tap ≥ setting).
 // Gate MID_RACE_JOIN & batas lintasan ditegakkan di sini.
+function isJoinComment(txt) {
+  // txt sudah lower-case & trimmed. Persis = ikut; memuat keyword + pendek = ikut.
+  // Keyword pendek (≤2 char, mis. "1") HARUS persis — kalau tidak, semua komentar
+  // berisi angka 1 ("harga 100rb") akan dianggap join.
+  for (const kw of CONFIG.JOIN_KEYWORDS) {
+    const k = kw.toLowerCase();
+    if (!k) continue;
+    if (txt === k) return true;
+    if (k.length > 2 && txt.length <= 40 && txt.includes(k)) return true;
+  }
+  return false;
+}
+// Teks kata kunci untuk UI (tanpa tanda petik): 1 / gas / lari / ikut
+function joinKeywordsText() { return CONFIG.JOIN_KEYWORDS.filter(Boolean).join(" / "); }
 function tryAutoJoin(event) {
   if ((state.phase === "running" || state.phase === "countdown") && !CONFIG.MID_RACE_JOIN) {
     pushToast(`⏳ ${event.username}: tunggu ronde berikutnya`, "#9fb4d8");
@@ -681,15 +696,18 @@ function tryAutoJoin(event) {
 function handleTikTokEvent(event) {
   const now = performance.now();
   if (event.type === "comment") {
-    // hanya komentar KUNCI yang membuat pemain — bukan semua chat
-    if (!/^(join|gabung)$/i.test(event.comment.trim())) return;
+    // hanya komentar KUNCI yang membuat pemain — bukan semua chat.
+    // Cocok longgar: komentar persis ATAU komentar pendek (≤40 char) yang memuat kata kunci —
+    // mis. "gas" dan "gas dong!" sama-sama ikut; komentar panjang/obrolan diabaikan.
+    const txt = event.comment.trim().toLowerCase();
+    if (!isJoinComment(txt)) return;
     tryAutoJoin(event);
     return;
   }
   if (event.type === "join") {
     // ⚠️ event "join" TikTok = orang MASUK room (member) — BUKAN daftar pemain.
     // (Bug lama: tiap penonton yang lewat masuk room langsung jadi pelari.)
-    // Ikut serta yang benar: komentar "join"/"gabung", gift ≥ ambang B1, atau tap ≥ setting.
+    // Ikut serta yang benar: komentar kunci (CONFIG.JOIN_KEYWORDS), gift ≥ ambang B1, atau tap ≥ setting.
     return;
   }
   if (event.type === "gift") {
@@ -705,7 +723,7 @@ function handleTikTokEvent(event) {
       pushToast(`⭐ ${event.username} kasih dukungan ×${event.giftCount} (boost hanya saat race)`, "#c3a1ff");
       return;
     }
-    if (!runner) { pushToast(`⭐ ${event.username}: ketik join / kirim dukungan ≥${CONFIG.BOOST_LEVELS[0].minCoins} buat ikut`, "#ff8a7a"); return; }
+    if (!runner) { pushToast(`⭐ ${event.username}: kirim dukungan ≥${CONFIG.BOOST_LEVELS[0].minCoins} atau tap 💗 buat ikut`, "#ff8a7a"); return; }
     if (runner.finished) { pushToast(`⭐ ${event.username} sudah finish`, "#9fb4d8"); return; }
     // Level boost gift: HARGA PER-GIFT (coinValue) DIPECAH ke ambang-ambang (greedy),
     // mis. 25 koin = B4 (20) + B2 (5) → dua boost sekaligus: kecepatan DIJUMLAH selama
@@ -832,23 +850,24 @@ function screenToWorld(sx) { return sx / ZOOM + state.camX; }
 // ---------- update (single central updater, no per-object tweens) ----------
 // cutaway kamera: saat ada pemain di-boost, kamera fokus ke dia beberapa detik, lalu kembali ke pemimpin
 function focusCameraOn(runner, now, isBoost = true) {
-  if (!runner || state.phase !== "running") return;
+  if (!runner || state.phase !== "running") return false;
   // MODE MANUAL (lock) = RAJA: roam & boost sama sekali tidak memotong.
   // Kamera tetap ke pemain terkunci sampai user mengembalikan ke AUTO.
-  if (state.camMode === "manual") return;
+  if (state.camMode === "manual") return false;
   // boost = aksi penting: SELALU difokus walau pelari jauh di belakang pemimpin
   // (kamera menyusur mundur; pan jarak jauh dibatasi kecepatan di update)
-  // roam tetap dibatasi ±1 layar di belakang pemimpin agar tidak lompat absurd
-  if (!isBoost) {
+  // roam dibatasi di belakang pemimpin HANYA di mode pan halus — di LOCAT (CAM_SNAP)
+  // tidak ada animasi perjalanan, jadi batas jarak tidak relevan (semua pemain dijangkau)
+  if (!isBoost && !CONFIG.CAM_SNAP) {
     const alive = state.runners.filter((r) => !r.finished);
     const leaderX = alive.length ? Math.max(...alive.map((r) => runnerWorldX(r))) : runnerWorldX(runner);
-    if (leaderX - runnerWorldX(runner) > CONFIG.CAM_FOCUS_MAX_BEHIND) return;
+    if (leaderX - runnerWorldX(runner) > CONFIG.CAM_FOCUS_MAX_BEHIND) return false;
   }
   // prioritas: boost SELALU memotong fokus (roam/leader); roam tidak boleh memotong boost aktif
   // dan roam↔beruntun dibatasi cooldown agar kamera tidak goyang
   if (!isBoost) {
-    if (state.camFocusRunner && state.camFocusBoost && now < state.camFocusUntil) return;
-    if (now - state.camLastFocusAt < CONFIG.CAM_FOCUS_COOLDOWN * 1000 && state.camFocusRunner !== runner) return;
+    if (state.camFocusRunner && state.camFocusBoost && now < state.camFocusUntil) return false;
+    if (now - state.camLastFocusAt < CONFIG.CAM_FOCUS_COOLDOWN * 1000 && state.camFocusRunner !== runner) return false;
   }
   state.camFocusRunner = runner;
   state.camFocusBoost = !!isBoost;
@@ -860,12 +879,14 @@ function focusCameraOn(runner, now, isBoost = true) {
   }
   state.camFocusUntil = now + seconds * 1000;
   state.camLastFocusAt = now;
+  return true;
 }
 
 // roam: sesekali kamera ikut pelari acak (bukan pemimpin), memberi kesan "semua pemain dilihat"
-function scheduleNextRoam(now) {
+function scheduleNextRoam(now, overrideSec) {
   const min = CONFIG.CAM_ROAM_EVERY_MIN, max = CONFIG.CAM_ROAM_EVERY_MAX;
-  state.camNextRoamAt = now + (min + Math.random() * (max - min)) * 1000;
+  const delay = Number.isFinite(overrideSec) ? overrideSec : min + Math.random() * (max - min);
+  state.camNextRoamAt = now + delay * 1000;
 }
 
 function maybeRoam(now) {
@@ -874,12 +895,23 @@ function maybeRoam(now) {
   if (state.runners.length < 2) return;          // 1 pemain: tidak ada yang bisa di-roam
   const leader = state.runners.reduce((a, b) => (b.progress > a.progress ? b : a));
   const leaderX = runnerWorldX(leader);
+  // mode LOCAT (CAM_SNAP): lompat instan, tanpa batas jarak → semua pelari terjangkau
+  const maxBehind = CONFIG.CAM_SNAP ? Infinity : CONFIG.CAM_ROAM_MAX_BEHIND;
   const cand = state.runners.filter((r) => !r.finished && r !== leader && !(r.boosts.some((b) => b.until > now))
-    && leaderX - runnerWorldX(r) <= CONFIG.CAM_ROAM_MAX_BEHIND);
+    && leaderX - runnerWorldX(r) <= maxBehind);
   if (!cand.length) { scheduleNextRoam(now); return; }
-  const pick = cand[Math.floor(Math.random() * cand.length)];
-  focusCameraOn(pick, now, false);
-  scheduleNextRoam(now);                          // interval dihitung dari sejak roam dimulai
+  // ROUND-ROBIN, bukan acak murni: acak dengan bobot jarak → yang disorot hampir selalu
+  // pelari 2 (dekat pemimpin), penonton belakang tak pernah kelihatan.
+  // Ambil yang PALING LAMA tidak disorot (iklan "semua pemain dilihat" terbukti).
+  cand.sort((a, b) => (a.lastRoamAt || 0) - (b.lastRoamAt || 0));
+  const freshest = cand.filter((r) => (r.lastRoamAt || 0) === (cand[0].lastRoamAt || 0));
+  const pick = freshest[Math.floor(Math.random() * freshest.length)];
+  const taken = focusCameraOn(pick, now, false);
+  if (taken) pick.lastRoamAt = now;   // hitung "pernah disorot" hanya bila roam tidak ditolak boost
+  // BUG LAMA: jadwal roam berikutnya selalu 12–20 dtk meski pick DITOLAK (boost masih
+  // aktif / cooldown) → di live yang sering boost, roam nggak pernah sempat jalan.
+  // Sekarang: ditolak → retry cepat 3 dtk; diterima → interval normal.
+  scheduleNextRoam(now, taken ? undefined : 3);
 }
 
 function update(dt, now) {
@@ -1738,7 +1770,7 @@ function drawFx() {
 function drawCtaTicker(now) {
   // Banner CTA berjalan di langit (fase lobby): instruksi cara ikut + ajakan — bikin
   // penonton baru yang scroll lewat langsung paham tanpa baca deskripsi live.
-  const txt = "👇 KETIK \"join\" / \"gabung\" DI KOMENTAR BUAT IKUT LARI!   💗 TAP 100× = LANGSUNG IKUT LARI!   ";
+  const txt = `👇 KETIK ${joinKeywordsText().toUpperCase()} DI KOMENTAR BUAT IKUT LARI!   💗 TAP 100× = LANGSUNG IKUT LARI!   `;
   ctx.font = "800 26px 'Trebuchet MS', system-ui";
   ctx.textAlign = "left";
   const tw = ctx.measureText(txt).width;
@@ -1887,7 +1919,7 @@ function drawMinimap(now) {
   ctx.fill();
   // status (dipindah ke sini karena panel judul sudah dihapus)
   const statusText = {
-    lobby: "Ketik join / gabung untuk ikut balapan",
+    lobby: "Menunggu pelari…",
     countdown: "Bersiap di garis start…",
     running: CONFIG.USE_ROUND_TIMEOUT && Number.isFinite(state.roundDeadline)
       ? `⏱ Sisa ${Math.max(0, Math.ceil((state.roundDeadline - now) / 1000))} dtk`
@@ -2027,8 +2059,8 @@ function drawLeaderboard() {
     ctx.textAlign = "center";
     ctx.fillStyle = "#8fa1bd";
     ctx.font = "600 19px 'Trebuchet MS', system-ui";
-    ctx.fillText("Belum ada pelari —", x0 + w0 / 2, y0 + 66);
-    ctx.fillText("kirim komentar join/gabung untuk ikut", x0 + w0 / 2, y0 + 92);
+    ctx.fillText("Belum ada pelari", x0 + w0 / 2, y0 + 66);
+    ctx.fillText("tunggu penonton ikut…", x0 + w0 / 2, y0 + 92);
     return;
   }
   const cellW = (w0 - 8) / cols;
@@ -2360,6 +2392,8 @@ document.getElementById("add-bot").addEventListener("click", addOneBot);
     visible = true;
     scrim.hidden = false;
     modal.hidden = false;
+    const kw = document.getElementById("help-join-keywords");
+    if (kw) kw.textContent = CONFIG.JOIN_KEYWORDS.join(" / ");
     requestAnimationFrame(() => modal.classList.add("is-open"));
   };
   const hide = () => {
@@ -2474,6 +2508,7 @@ canvas.addEventListener("pointerdown", (ev) => {
   if (!h) return;
   if (h.type === "roam") {
     CONFIG.CAM_ROAM_ENABLED = !CONFIG.CAM_ROAM_ENABLED;
+    saveSettings({ camRoam: CONFIG.CAM_ROAM_ENABLED });
     if (CONFIG.CAM_ROAM_ENABLED) scheduleNextRoam(performance.now());
     pushToast(`🔀 Auto-follow roam: ${CONFIG.CAM_ROAM_ENABLED ? "ON — kamera sesekali ikut pelari lain" : "OFF — AUTO selalu fokus pemimpin"}`, "#8ef0a8");
     return;
@@ -2541,6 +2576,7 @@ function initSettingsPanel() {
   if (saved.nameplate) CONFIG.NAMEPLATE_MODE = saved.nameplate;
   if (typeof saved.minimap === "boolean") CONFIG.SHOW_MINIMAP = saved.minimap;
   if (typeof saved.ticker === "boolean") CONFIG.SHOW_TICKER = saved.ticker;
+  if (typeof saved.camRoam === "boolean") CONFIG.CAM_ROAM_ENABLED = saved.camRoam;
   if (typeof saved.leaderboard === "boolean") CONFIG.SHOW_LEADERBOARD = saved.leaderboard;
   if (typeof saved.camSnap === "boolean") CONFIG.CAM_SNAP = saved.camSnap;
   if (typeof saved.roundTimeout === "boolean") CONFIG.USE_ROUND_TIMEOUT = saved.roundTimeout;
@@ -2549,6 +2585,7 @@ function initSettingsPanel() {
     if (CONFIG.BOOST_LEVELS[i] && Number.isFinite(g?.minCoins)) CONFIG.BOOST_LEVELS[i].minCoins = Math.max(1, g.minCoins);
     if (CONFIG.BOOST_LEVELS[i] && g?.icon) CONFIG.BOOST_LEVELS[i].icon = g.icon;
   });
+  if (Array.isArray(saved.joinKeywords) && saved.joinKeywords.length) CONFIG.JOIN_KEYWORDS = saved.joinKeywords.map((k) => String(k).trim()).filter(Boolean).slice(0, 6);
   const bgmOn = saved.bgmOn ?? true, bgmVol = saved.bgmVol ?? 0.6;
 
   const panel = document.getElementById("settings-panel");
@@ -2566,6 +2603,7 @@ function initSettingsPanel() {
   const elMini = document.getElementById("set-minimap");
   const elLb = document.getElementById("set-leaderboard");
   const elTicker = document.getElementById("set-ticker");
+  const elKeywords = document.getElementById("set-join-keywords");
   const scrim = document.getElementById("settings-scrim");
   elFinish.value = CONFIG.FINISH_DISTANCE_M;
   elMid.checked = CONFIG.MID_RACE_JOIN;
@@ -2575,6 +2613,7 @@ function initSettingsPanel() {
   elMini.checked = CONFIG.SHOW_MINIMAP;
   elLb.checked = CONFIG.SHOW_LEADERBOARD;
   if (elTicker) elTicker.checked = CONFIG.SHOW_TICKER;
+  if (elKeywords) elKeywords.value = CONFIG.JOIN_KEYWORDS.join(", ");
   const elCamSnap = document.getElementById("set-cam-snap");
   if (elCamSnap) elCamSnap.checked = CONFIG.CAM_SNAP;
   const elRoundTO = document.getElementById("set-round-timeout");
@@ -2661,6 +2700,14 @@ function initSettingsPanel() {
   elMini.addEventListener("change", () => { CONFIG.SHOW_MINIMAP = elMini.checked; saveSettings({ minimap: elMini.checked }); });
   elLb.addEventListener("change", () => { CONFIG.SHOW_LEADERBOARD = elLb.checked; saveSettings({ leaderboard: elLb.checked }); });
   if (elTicker) elTicker.addEventListener("change", () => { CONFIG.SHOW_TICKER = elTicker.checked; saveSettings({ ticker: elTicker.checked }); });
+  if (elKeywords) elKeywords.addEventListener("change", () => {
+    const kws = elKeywords.value.split(",").map((k) => k.trim()).filter(Boolean).slice(0, 6);
+    if (!kws.length) { elKeywords.value = CONFIG.JOIN_KEYWORDS.join(", "); return; }
+    CONFIG.JOIN_KEYWORDS = kws;
+    elKeywords.value = kws.join(", ");
+    saveSettings({ joinKeywords: kws });
+    pushToast(`🔑 Kata kunci ikut: ${kws.join(" / ")}`, "#9fd8a8");
+  });
   if (elCamSnap) elCamSnap.addEventListener("change", () => { CONFIG.CAM_SNAP = elCamSnap.checked; saveSettings({ camSnap: elCamSnap.checked }); });
   if (elRoundTO) elRoundTO.addEventListener("change", () => {
     CONFIG.USE_ROUND_TIMEOUT = elRoundTO.checked;
@@ -2671,6 +2718,43 @@ function initSettingsPanel() {
       state.roundDeadline = elRoundTO.checked ? performance.now() + cd + CONFIG.ROUND_TIMEOUT_SECONDS * 1000 : Infinity;
     }
     pushToast(elRoundTO.checked ? `⏱ Batas waktu aktif: ${CONFIG.ROUND_TIMEOUT_SECONDS} dtk/ronde` : "⏱ Batas waktu OFF — balapan sampai semua finish", "#9fd8a8");
+  });
+  // tombol 💾 Simpan — ambil SEMUA kontrol, terap + simpan sekaligus (bukan cuma auto per-field)
+  const saveBtn = document.getElementById("save-settings");
+  if (saveBtn) saveBtn.addEventListener("click", () => {
+    const vFinish = Math.max(500, Math.min(20000, Number(elFinish.value) || CONFIG.FINISH_DISTANCE_M));
+    elFinish.value = CONFIG.FINISH_DISTANCE_M = vFinish;
+    const kws = elKeywords ? elKeywords.value.split(",").map((k) => k.trim()).filter(Boolean).slice(0, 6) : [];
+    if (kws.length) { CONFIG.JOIN_KEYWORDS = kws; if (elKeywords) elKeywords.value = kws.join(", "); }
+    CONFIG.MID_RACE_JOIN = elMid.checked;
+    CONFIG.NAMEPLATE_MODE = elName.value;
+    CONFIG.SHOW_MINIMAP = elMini.checked;
+    CONFIG.SHOW_LEADERBOARD = elLb.checked;
+    if (elTicker) CONFIG.SHOW_TICKER = elTicker.checked;
+    if (elCamSnap) CONFIG.CAM_SNAP = elCamSnap.checked;
+    if (elRoundTO) CONFIG.USE_ROUND_TIMEOUT = elRoundTO.checked;
+    CONFIG.LIKE_TAPS_PER_BOOST = Math.max(1, Math.round(Number(document.getElementById("set-taps-per-boost")?.value) || CONFIG.LIKE_TAPS_PER_BOOST));
+    const bgmOn2 = elBgm.checked, vol2 = Number(elVol.value) / 100;
+    applyBgm(bgmOn2, vol2);
+    saveSettings({
+      finishM: vFinish,
+      joinKeywords: CONFIG.JOIN_KEYWORDS,
+      midJoin: CONFIG.MID_RACE_JOIN,
+      nameplate: CONFIG.NAMEPLATE_MODE,
+      minimap: CONFIG.SHOW_MINIMAP,
+      leaderboard: CONFIG.SHOW_LEADERBOARD,
+      ticker: CONFIG.SHOW_TICKER,
+      camSnap: CONFIG.CAM_SNAP,
+      roundTimeout: CONFIG.USE_ROUND_TIMEOUT,
+      tapsPerBoost: CONFIG.LIKE_TAPS_PER_BOOST,
+      bgmOn: bgmOn2, bgmVol: vol2,
+      gifts: CONFIG.BOOST_LEVELS.map((l) => ({ minCoins: l.minCoins, icon: l.icon })),
+    });
+    saveBtn.classList.remove("is-saved");
+    void saveBtn.offsetWidth;           // restart animasi bila klik berkali-kali
+    saveBtn.classList.add("is-saved");
+    pushToast("💾 Pengaturan disimpan", "#9fd8a8");
+    setTimeout(() => setPanel(false), 260);   // close panel setelah animasi simpan sempat terlihat
   });
   elBgm.addEventListener("change", () => { applyBgm(elBgm.checked, Number(elVol.value) / 100); saveSettings({ bgmOn: elBgm.checked }); });
   elVol.addEventListener("input", () => { applyBgm(elBgm.checked, Number(elVol.value) / 100); });
@@ -2697,6 +2781,7 @@ function initSettingsPanel() {
     elMini.checked = CONFIG.SHOW_MINIMAP;
     elLb.checked = CONFIG.SHOW_LEADERBOARD;
     if (elTicker) elTicker.checked = CONFIG.SHOW_TICKER;
+    if (elKeywords) elKeywords.value = CONFIG.JOIN_KEYWORDS.join(", ");
     setPanel(panel.hidden);          // toggle
   });
   closeBtn.addEventListener("click", () => setPanel(false));
