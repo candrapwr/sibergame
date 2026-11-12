@@ -25,14 +25,8 @@ const games = [
     entry: "games/drag-race/index.html",
     accent: "rgba(255, 160, 60, .22)",
     cover: {
-      type: "race",
-      skyline: "games/drag-race/assets/bg/kampung-rooftops-strip.png",
-      ground: "games/drag-race/assets/track/grass-ground-strip.png",
-      runners: [
-        "games/drag-race/assets/characters/chibi-gato.png",
-        "games/drag-race/assets/characters/ninja-black.png",
-        "games/drag-race/assets/characters/athlete-girl-blue-jersey.png"
-      ]
+      type: "image",
+      src: "games/drag-race/assets/ui/dashboard-cover.png"
     }
   }
 ];
@@ -42,13 +36,18 @@ const count = document.getElementById("game-count");
 
 count.textContent = `${games.length} game`;
 list.innerHTML = games.map((game) => {
-  const coverStyle = game.cover?.type === "race"
-    ? `; --race-skyline: url('${game.cover.skyline}'); --race-ground: url('${game.cover.ground}')`
-    : game.cover
-      ? `; --game-red-base: url('${game.cover.redBase}'); --game-blue-base: url('${game.cover.blueBase}')`
-      : "";
+  const coverStyle = game.cover?.type === "image"
+    ? `; --game-cover-img: url('${game.cover.src}')`
+    : game.cover?.type === "race"
+      ? `; --race-skyline: url('${game.cover.skyline}'); --race-ground: url('${game.cover.ground}')`
+      : game.cover
+        ? `; --game-red-base: url('${game.cover.redBase}'); --game-blue-base: url('${game.cover.blueBase}')`
+        : "";
   let coverUnits, coverTag = "LIVE BATTLE";
-  if (game.cover?.type === "race") {
+  if (game.cover?.type === "image") {
+    coverTag = "LIVE RACE";
+    coverUnits = `<img class="game-card-cover-image" src="${game.cover.src}" alt="" />`;
+  } else if (game.cover?.type === "race") {
     coverTag = "LIVE RACE";
     const depths = [
       { cls: "far", src: game.cover.runners[0] },

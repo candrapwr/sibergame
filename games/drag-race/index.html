@@ -38,10 +38,10 @@
           <button class="dock-sim" id="add-bot" type="button" title="Tambah 1 pemain bot">🤖 +1</button>
           <span class="sim-extra" id="sim-extra">
             <button class="dock-sim" id="sim-boost-1" type="button" title="Simulasi 100 tap/love → Boost 1 (debu kaki, tanpa VFX)">💨B1</button>
-            <button class="dock-sim" id="sim-boost-2" type="button" title="Kirim gift boost level 2 (flame besar)">🔥B2</button>
-            <button class="dock-sim" id="sim-boost-3" type="button" title="Kirim gift boost level 3 (streaks biru)">🌠B3</button>
-            <button class="dock-sim" id="sim-boost-4" type="button" title="Kirim gift boost level 4 (lightning ungu)">⚡B4</button>
-            <button class="dock-sim" id="sim-boost-5" type="button" title="Kirim gift boost level 5 (nova emas)">🌟B5</button>
+            <button class="dock-sim" id="sim-boost-2" type="button" title="Simulasi dukungan level 2 (flame besar)">🔥B2</button>
+            <button class="dock-sim" id="sim-boost-3" type="button" title="Simulasi dukungan level 3 (streaks biru)">🌠B3</button>
+            <button class="dock-sim" id="sim-boost-4" type="button" title="Simulasi dukungan level 4 (lightning ungu)">⚡B4</button>
+            <button class="dock-sim" id="sim-boost-5" type="button" title="Simulasi dukungan level 5 (nova emas)">🌟B5</button>
             <button class="dock-sim" id="toggle-name" type="button" title="Toggle label nama pemain di trek (auto → on → off)">🏷️ Auto</button>
           </span>
           <button class="dock-sim" id="open-settings" type="button" title="Pengaturan game">⚙️</button>
@@ -54,7 +54,7 @@
         <div class="settings-head">
           <div class="settings-tabs" role="tablist">
             <button class="settings-tab is-active" id="tab-general" type="button" role="tab">UMUM</button>
-            <button class="settings-tab" id="tab-gift" type="button" role="tab">GIFT</button>
+            <button class="settings-tab" id="tab-gift" type="button" role="tab">BOOST</button>
           </div>
           <button class="settings-close" id="close-settings" type="button" title="Tutup">✕</button>
         </div>
@@ -90,6 +90,10 @@
             <input type="checkbox" id="set-leaderboard" />
           </label>
           <label class="set-row set-toggle">
+            <span>Teks jalan (panduan lobi)</span>
+            <input type="checkbox" id="set-ticker" />
+          </label>
+          <label class="set-row set-toggle">
             <span>Kamera LOCAT (tanpa geser halus)</span>
             <input type="checkbox" id="set-cam-snap" />
           </label>
@@ -104,7 +108,7 @@
           </label>
         </div>
         <div class="settings-body" id="settings-gift" hidden>
-          <div class="set-hint">💨 B1: tiap 💗 tap ATAU gift 🪙 senilai ambangnya. Harga gift DIPECAH ke ambang (greedy, maks 1× tiap level) — mis. 25🪙 = B4(20)+B2(5): speed dijumlah, durasi tiap level sendiri.</div>
+          <div class="set-hint">💨 B1: tiap 💗 tap ATAU dukungan kecil senilai ambangnya. Nilai dukungan DIPECAH ke ambang (greedy, maks 1× tiap level) — mis. tingkat 25 = B4(20)+B2(5): speed dijumlah, durasi tiap level sendiri.</div>
           <div class="gift-rows" id="gift-rows"></div>
         </div>
       </div>
@@ -123,20 +127,20 @@
             <div class="help-card-title">🏃 GABUNG — 3 CARA</div>
             <div class="help-steps">
               <div class="help-step"><span class="help-step-n">1</span><span><b>Ketik</b> <code>join</code> / <code>gabung</code> di komentar</span></div>
-              <div class="help-step"><span class="help-step-n">2</span><span><b>Lempar gift</b> ≥ 🪙 ambang B1 → langsung lari + boost</span></div>
+              <div class="help-step"><span class="help-step-n">2</span><span><b>Kirim dukungan</b> ⭐ → langsung lari + boost</span></div>
               <div class="help-step"><span class="help-step-n">3</span><span><b>Tap 💗</b> 100× → ikut lari + Boost 1</span></div>
             </div>
           </div>
           <div class="help-card">
-            <div class="help-card-title">🚀 BOOST — GIFT MAHAL DIPECAH</div>
+            <div class="help-card-title">🚀 BOOST — MAKIN BESAR DUKUNGAN MAKIN NGEBUT</div>
             <div class="help-rows">
-              <div class="help-row"><span class="help-lv b1">💨 B1</span><span>tap/love atau gift kecil</span></div>
-              <div class="help-row"><span class="help-lv b2">🔥 B2</span><span>gift ≥ 5🪙</span></div>
-              <div class="help-row"><span class="help-lv b3">🌠 B3</span><span>gift ≥ 10🪙</span></div>
-              <div class="help-row"><span class="help-lv b4">⚡ B4</span><span>gift ≥ 20🪙</span></div>
-              <div class="help-row"><span class="help-lv b5">🌟 B5</span><span>gift ≥ 30🪙 — paling NGEBUT</span></div>
+              <div class="help-row"><span class="help-lv b1">💨 B1</span><span>tap/love atau dukungan kecil</span></div>
+              <div class="help-row"><span class="help-lv b2">🔥 B2</span><span>dukungan kecil-menengah</span></div>
+              <div class="help-row"><span class="help-lv b3">🌠 B3</span><span>dukungan menengah</span></div>
+              <div class="help-row"><span class="help-lv b4">⚡ B4</span><span>dukungan besar</span></div>
+              <div class="help-row"><span class="help-lv b5">🌟 B5</span><span>dukungan terbesar — paling NGEBUT</span></div>
             </div>
-            <div class="help-note"><b>25🪙 = B4 + B2</b> sekaligus, speed dijumlah. <b>Combo</b> = durasi × jumlah, speed tetap.</div>
+            <div class="help-note">Dukungan besar bisa memicu <b>beberapa boost sekaligus</b>, speed dijumlah. <b>Kombo</b> = durasi lebih panjang, speed tetap.</div>
           </div>
           <div class="help-card">
             <div class="help-card-title">🏆 FINISH &amp; KAMERA</div>
@@ -151,7 +155,7 @@
             <div class="help-card-title">⚙️ PANEL PENGATURAN — tombol ⚙️ di dock</div>
             <div class="help-rows">
               <div class="help-row"><span class="help-ic">🔧</span><span><b>UMUM</b> — jarak lintasan · join tengah race · plat nama · minimap · leaderboard · musik</span></div>
-              <div class="help-row"><span class="help-ic">🎁</span><span><b>GIFT</b> — atur ambang 🪙 B1–B5 · tersimpan otomatis</span></div>
+              <div class="help-row"><span class="help-ic">🔋</span><span><b>BOOST</b> — atur ambang B1–B5 · tersimpan otomatis</span></div>
             </div>
           </div>
           <div class="help-card">

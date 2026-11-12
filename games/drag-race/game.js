@@ -95,6 +95,7 @@ const CONFIG = {
   NAMEPLATE_MODE: "on",            // "auto" = sembunyi saat lajur sempit | "on" = selalu tampil | "off" = tidak pernah tampil
   LEADERBOARD_MAX_ROWS: 5,           // jumlah BARIS per kolom (leaderboard 2 kolom → tampung 10 nama); sisanya jadi baris "… N pelari lainnya"
   SHOW_MINIMAP: true,                // panel minimap atas — toggle via panel pengaturan ⚙️
+  SHOW_TICKER: true,                 // teks CTA berjalan di langit saat lobi — toggle via panel pengaturan ⚙️
   SHOW_LEADERBOARD: true,            // leaderboard kiri — toggle via panel pengaturan ⚙️
   LANE_DASH_LINES: false,            // garis putus-putus pembatas lajur — user: "jangan ada dash line" (default mati; prosedural canvas)
   RUNNER_SIZE_RATIO: 1.1,            // tinggi karakter relatif terhadap tinggi lajur (besarkan; tumpang-tindih antar lajur diperbolehkan)
@@ -289,6 +290,13 @@ const state = {
   camLastFocusAt: 0,       // waktu pengalihan fokus terakhir (cooldown anti-goyang)
   parts: [],               // partikel prosedural (confetti, spark, dust, smoke)
   shake: 0,                // screen shake
+  speedFx: 0,              // 0..1 intensitas FX ngebut B5 (speed lines + vignette emas), meluruh tiap frame
+  goFlash: 0,              // 0..1 kilat "GO!" sesaat setelah countdown berakhir
+  finishAt: 0,             // performance.now() saat ronde berubah ke finished (delay+punch overlay)
+  roundCoins: 0,           // total koin gift yang masuk ronde ini ( utk panel finish )
+  leaderRef: null,         // pelari terdepan yang belum finish (mahkota & aura)
+  lbRankAt: 0,             // waktu evaluasi rank terakhir (panah ▲▼ leaderboard)
+  lbOrder: new Map(),      // username → rank pada evaluasi terakhir
   flashes: [],             // kilatan kamera penonton di tribun
   birds: [],               // merpati yang melintas layar (flyby)
   nextBirdAt: 0,
@@ -304,8 +312,8 @@ function nextCharKey() {
   return charBag.pop();
 }
 
-function pushToast(text, color = "#ffd08a") {
-  state.toasts.push({ text, color, time: CONFIG.TOAST_SECONDS, life: CONFIG.TOAST_SECONDS });
+function pushToast(text, color = "#ffd08a", opts = {}) {
+  state.toasts.push({ text, color, bg: opts.bg || null, time: CONFIG.TOAST_SECONDS, life: CONFIG.TOAST_SECONDS });
   if (state.toasts.length > MAX_TOASTS) state.toasts.shift();
 }
 
@@ -426,6 +434,7 @@ function startRace() {
     r.distM = 0; r.progress = 0; r.finished = false; r.place = 0; r.boosts = []; r.boostFxUntil = 0; r.tapCount = 0;
   });
   state.roundStarts = performance.now() + countdownMs;
+  state.roundCoins = 0;                    // reset pemboran koin untuk ronde baru
   state.roundDeadline = CONFIG.USE_ROUND_TIMEOUT
     ? performance.now() + countdownMs + CONFIG.ROUND_TIMEOUT_SECONDS * 1000
     : Infinity;                                  // tanpa batas waktu: ronde selesai hanya saat semua finish
@@ -443,6 +452,7 @@ function resetGame() {
   state.birds = [];
   state.nextBirdAt = performance.now() + 6000;
   state.shake = 0;
+  state.speedFx = 0;
   state.winner = null;
   state.nextLane = 0;
   selectedChar = 0;
@@ -643,13 +653,15 @@ function grantBoost(runner, lvl, combo, who, now = performance.now()) {
     });
   }
   addShake(effLvl === 0 ? 2 : 4 + effLvl * 2.5);
+  // B5 (level tertinggi) → FX ngebut layar: speed lines + vignette emas ±1,6 dtk
+  if (lvl === CONFIG.BOOST_LEVELS.length - 1) state.speedFx = 1;
   // KAMERA TIDAK menyorot pemain yang baru saja JOIN (join via gift/tap sekaligus boost) —
   // sorotan hanya untuk boost pemain yang sudah lama di lintasan. (Permintaan user.)
   const justJoined = now - (runner.joinedAt || 0) < CONFIG.JOIN_BOOST_CAM_GRACE_MS;
   if (!justJoined) focusCameraOn(runner, now);
   const activeTop = Math.max(...runner.boosts.map((b) => b.lvl));
   const comboTxt = combo > 1 ? ` ×${combo} → ${seconds.toFixed(0)} dtk` : "";
-  pushToast(`${cfg.icon} ${who} ${cfg.label} (+${cfg.speedAdd} m/s)${comboTxt}${runner.boosts.length > 1 && activeTop > lvl ? ` — tumpang dengan ${CONFIG.BOOST_LEVELS[activeTop].label}` : ""}`, cfg.color);
+  pushToast(`${cfg.icon} ${who} ${cfg.label} (+${cfg.speedAdd} m/s)${comboTxt}${runner.boosts.length > 1 && activeTop > lvl ? ` — tumpang dengan ${CONFIG.BOOST_LEVELS[activeTop].label}` : ""}`, "#ffffff", { bg: cfg.color });
 }
 
 // Gabung pemain dari event apa pun (komentar kunci / gift ≥ B1 / tap ≥ setting).
@@ -690,16 +702,17 @@ function handleTikTokEvent(event) {
       runner = tryAutoJoin(event);
     }
     if (state.phase !== "running") {
-      pushToast(`🎁 ${event.username} kirim ${event.giftName} ×${event.giftCount} (boost hanya saat race)`, "#c3a1ff");
+      pushToast(`⭐ ${event.username} kasih dukungan ×${event.giftCount} (boost hanya saat race)`, "#c3a1ff");
       return;
     }
-    if (!runner) { pushToast(`🎁 ${event.username}: ketik join / gift ≥${CONFIG.BOOST_LEVELS[0].minCoins} koin untuk ikut`, "#ff8a7a"); return; }
-    if (runner.finished) { pushToast(`🎁 ${event.username} sudah finish`, "#9fb4d8"); return; }
+    if (!runner) { pushToast(`⭐ ${event.username}: ketik join / kirim dukungan ≥${CONFIG.BOOST_LEVELS[0].minCoins} buat ikut`, "#ff8a7a"); return; }
+    if (runner.finished) { pushToast(`⭐ ${event.username} sudah finish`, "#9fb4d8"); return; }
     // Level boost gift: HARGA PER-GIFT (coinValue) DIPECAH ke ambang-ambang (greedy),
     // mis. 25 koin = B4 (20) + B2 (5) → dua boost sekaligus: kecepatan DIJUMLAH selama
     // keduanya aktif, durasi tiap level jalan sendiri (4 dtk B4? → sesuai cfg masing2).
     // Sisa < ambang B2 tapi ≥ ambang B1 → 1× B1. Combo (giftCount) memperpanjang
     // durasi tiap bagian (detik dasar × combo, di-cap BOOST_COMBO_MAX_SECONDS).
+    state.roundCoins += unitCoins * combo;   // total koin riil yang dibakar ronde ini
     const parts = splitGiftCoins(unitCoins);
     for (const p of parts) grantBoost(runner, p, combo, event.username);
     return;
@@ -938,6 +951,7 @@ function update(dt, now) {
   if (state.phase === "countdown") {
     if (now >= state.countdownEnds) {
       state.phase = "running";
+      state.goFlash = 1;                      // kilat "GO!" melebar & memudar
       pushToast("GO! 🚦", "#8ef0a8");
     }
   }
@@ -971,12 +985,15 @@ function update(dt, now) {
         state.winner = state.runners.reduce((best, r) => (!best || r.place < best.place ? r : best), null);
       }
       state.phase = "finished";
+      state.finishAt = now;                  // overlay podium muncul setelah jeda dramatis
     }
   }
 
   // fx + toast (prune in-place)
   updateParticles(dt);
   state.shake = Math.max(0, state.shake - dt * 40);
+  state.speedFx = Math.max(0, state.speedFx - dt * 0.6);   // FX ngebut B5 meluruh ±1,6 dtk
+  state.goFlash = Math.max(0, state.goFlash - dt * 1.4);   // kilat GO ±0,7 dtk
   // kilatan kamera penonton DIHAPUS (tribun tidak lagi digambar)
   // merpati flyby sesekali (hanya bila aset frame tersedia)
   if (assets.pigeon_flap_1 && state.phase !== "lobby" && now > state.nextBirdAt) {
@@ -1143,10 +1160,19 @@ function drawToasts() {
     const bw = tw + padX * 2;
     const px = x1 - bw + (1 - easeOut(slideIn)) * (bw + 60);
     ctx.globalAlpha = fadeOut * 0.97;
-    ctx.fillStyle = "rgba(10,14,26,.82)";
-    ctx.fillRect(px, y - rowH + 6, bw, rowH);   // kotak tajam, flat
-    ctx.fillStyle = t.color;
-    ctx.fillRect(px, y - rowH + 6, 4, rowH);     // aksen kiri tipis kotak
+    if (t.bg) {
+      // CHIP boost: latar warna level penuh + strip gelap + teks gelap → "mahal"
+      ctx.fillStyle = t.bg;
+      ctx.fillRect(px, y - rowH + 6, bw, rowH);
+      ctx.fillStyle = "rgba(10,14,26,.85)";
+      ctx.fillRect(px, y - rowH + 6, 6, rowH);
+      ctx.fillStyle = "#10162a";
+    } else {
+      ctx.fillStyle = "rgba(10,14,26,.82)";
+      ctx.fillRect(px, y - rowH + 6, bw, rowH);   // kotak tajam, flat
+      ctx.fillStyle = t.color;
+      ctx.fillRect(px, y - rowH + 6, 4, rowH);     // aksen kiri tipis kotak
+    }
     ctx.fillText(t.text, px + padX + 6, y - 8, tw);
     ctx.globalAlpha = 1;
   }
@@ -1449,6 +1475,9 @@ function drawRunners(now) {
   const baseLaneH = (LAYOUT.trackBottom - LAYOUT.trackTop) / CONFIG.MIN_LANES;
   const size = Math.max(CONFIG.RUNNER_SIZE_MIN, Math.min(Math.max(m.laneH, baseLaneH) * CONFIG.RUNNER_SIZE_RATIO, CONFIG.RUNNER_SIZE_MAX)) * ZOOM;
   const running = state.phase === "running";
+  // pemimpin saat ini (untuk mahkota & aura emas)
+  state.leaderRef = null;
+  for (const r of state.runners) if (!r.finished && (!state.leaderRef || r.progress > state.leaderRef.progress)) state.leaderRef = r;
   for (let i = 0; i < state.runners.length; i++) {
     const r = state.runners[i];
     const x = worldToScreen(runnerWorldX(r));
@@ -1492,6 +1521,19 @@ function drawRunners(now) {
     ctx.beginPath();
     ctx.ellipse(x, y + size * 0.46, size * 0.36 * popK, size * 0.09, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // === aura PEMIMPIN: pendar emas lembut + mahkota — langsung terlihat siapa #1 ===
+    if (state.leaderRef === r && (running || state.phase === "countdown")) {
+      const ar = size * (0.75 + Math.sin(now / 260) * 0.05);
+      const ag = ctx.createRadialGradient(x, y, size * 0.15, x, y, ar);
+      ag.addColorStop(0, "rgba(255,211,92,.28)");
+      ag.addColorStop(1, "rgba(255,211,92,0)");
+      ctx.fillStyle = ag;
+      ctx.beginPath(); ctx.arc(x, y, ar, 0, Math.PI * 2); ctx.fill();
+      ctx.font = `${Math.round(size * 0.26)}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.fillText("👑", x + size * 0.34, y - size * (0.62 + Math.sin(now / 400) * 0.02));
+    }
 
     // trail boost per level (VFX + glow mengikuti warna & ukuran level)
     if (boosted && running) {
@@ -1693,33 +1735,92 @@ function drawFx() {
   }
 }
 
+function drawCtaTicker(now) {
+  // Banner CTA berjalan di langit (fase lobby): instruksi cara ikut + ajakan — bikin
+  // penonton baru yang scroll lewat langsung paham tanpa baca deskripsi live.
+  const txt = "👇 KETIK \"join\" / \"gabung\" DI KOMENTAR BUAT IKUT LARI!   💗 TAP 100× = LANGSUNG IKUT LARI!   ";
+  ctx.font = "800 26px 'Trebuchet MS', system-ui";
+  ctx.textAlign = "left";
+  const tw = ctx.measureText(txt).width;
+  // Siklus halus: naik lembut (20%) → tahan sebentar (25%) → hilang perlahan (55%)
+  // pakai smoothstep dua sisi; tanpa cut-off mendadak, alpha benar-benar → 0 di akhir.
+  const T = 4200;                                // durasi 1 siklus (ms)
+  const u = (now % T) / T;                       // 0..1
+  const smooth = (t) => t * t * (3 - 2 * t);     // ease in-out 0..1
+  let pulse;
+  if (u < 0.2) pulse = smooth(u / 0.2);
+  else if (u < 0.45) pulse = 1;
+  else pulse = 1 - smooth((u - 0.45) / 0.55);
+  const y = 208;
+  // pita gelap tipis sebagai dasar teks — ikut memudar bersama teks
+  ctx.fillStyle = `rgba(8,11,22,${0.55 * pulse})`;
+  ctx.fillRect(0, y - 34, W, 48);
+  const off = (now * 0.14) % tw;
+  ctx.fillStyle = `rgba(255,226,184,${pulse})`;
+  ctx.shadowColor = "rgba(255,179,71,.5)"; ctx.shadowBlur = 12;
+  for (let x = -off; x < W; x += tw) ctx.fillText(txt, x, y);
+  ctx.shadowBlur = 0;
+}
+
 function drawHeader(now) {
   const m = raceMetrics();
   ctx.textAlign = "center";
   // panel judul DIHAPUS; status race kini digambar di dalam panel minimap (drawMinimap)
 
   if (state.phase === "countdown") {
-    // angka countdown pulse: membesar lalu menyusut tiap detik
+    // === LENTERA START: 3 lampu lalu-lintas menyala berurutan + angka besar ===
     const remain = (state.countdownEnds - now) / 1000;
-    const n = Math.max(1, Math.ceil(remain));
+    const n = Math.max(1, Math.ceil(remain));                 // 3 → 1
     const frac = 1 - (remain - Math.floor(remain));            // 0..1 dalam detik berjalan
-    const pop = 1 + easeOut(Math.min(1, frac * 2.5)) * 0.001 + (1 - Math.min(1, frac * 3)) * 0.55;
     const cy = (m.top + m.bottom) / 2;
     ctx.save();
     ctx.translate(W / 2, cy);
+    // pelat lentera
+    ctx.fillStyle = "rgba(8,10,20,.72)";
+    roundRect(-230, -240, 460, 300, 18); ctx.fill();
+    // tiga bohlam: merah (3) → kuning (2) → hijau (1), menyala kumulatif
+    const lampOn = 4 - n;                                      // detik berjalan ke-1..3
+    const lampCols = [["#ff4d4d", "#5a1f1f"], ["#ffcf5c", "#6b5320"], ["#7cf39a", "#1f5a30"]];
+    for (let li = 0; li < 3; li++) {
+      const lx = -130 + li * 130, ly = -185;
+      const on = li < lampOn;
+      if (on) {
+        const glow = ctx.createRadialGradient(lx, ly, 6, lx, ly, 62);
+        glow.addColorStop(0, lampCols[li][0]); glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = 0.65; ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(lx, ly, 62, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = on ? lampCols[li][0] : lampCols[li][1];
+      ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(lx, ly, 34, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    // angka besar pop tiap detik
+    const pop = 1 + (1 - Math.min(1, frac * 3)) * 0.55;
     ctx.scale(pop, pop);
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = "rgba(8,10,20,.55)";
-    ctx.beginPath(); ctx.arc(0, 0, 132, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = "#ff8a3d";
-    ctx.lineWidth = 7;
-    ctx.beginPath(); ctx.arc(0, 0, 132, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - frac)); ctx.stroke();
     ctx.shadowColor = "rgba(255,255,255,.55)";
     ctx.shadowBlur = 26;
     ctx.fillStyle = "#ffffff";
     ctx.font = "800 190px 'Trebuchet MS', system-ui";
+    ctx.textAlign = "center";
     ctx.fillText(String(n), 0, 66);
+    ctx.restore();
+  }
+
+  if (state.goFlash > 0 && state.phase === "running") {
+    // "GO!" meledak sesaat setelah lampu hijau — zoom-out + fade
+    const k = state.goFlash;
+    const sc = 1 + (1 - k) * 0.6;
+    ctx.save();
+    ctx.translate(W / 2, (m.top + m.bottom) / 2);
+    ctx.scale(sc, sc);
+    ctx.globalAlpha = Math.min(1, k * 1.6);
+    ctx.font = "900 260px 'Trebuchet MS', system-ui";
+    ctx.textAlign = "center";
+    ctx.shadowColor = "rgba(140,240,168,.9)";
+    ctx.shadowBlur = 40;
+    ctx.fillStyle = "#8ef0a8";
+    ctx.fillText("GO!", 0, 90);
     ctx.restore();
   }
 }
@@ -1859,6 +1960,22 @@ function drawMinimap(now) {
 
 function drawLeaderboard() {
   const rows = state.runners.slice().sort((a, b) => (b.progress - a.progress) || (a.place && b.place ? a.place - b.place : 0));
+  // panah naik/turun: bandingkan urutan sekarang vs snapshot terakhir (perbarui tiap 2 dtk)
+  const nowT = performance.now();
+  const rankDelta = new Map();
+  if (nowT - state.lbRankAt > 2000) {
+    rows.forEach((r, i) => {
+      const prev = state.lbOrder.get(r.username);
+      if (prev !== undefined && prev !== i) rankDelta.set(r.username, prev > i ? 1 : -1);   // 1=naik
+      state.lbOrder.set(r.username, i);
+    });
+    state.lbRankAt = nowT;
+  } else {
+    rows.forEach((r, i) => {
+      const prev = state.lbOrder.get(r.username);
+      if (prev !== undefined && prev !== i) rankDelta.set(r.username, prev > i ? 1 : -1);
+    });
+  }
   const MAX_ROWS = CONFIG.LEADERBOARD_MAX_ROWS; // baris per kolom; sisanya diringkas
   const shown = rows.length > MAX_ROWS * 2 ? rows.slice(0, MAX_ROWS * 2) : rows;
   const cols = shown.length > MAX_ROWS ? 2 : 1;
@@ -1938,6 +2055,22 @@ function drawLeaderboard() {
       ctx.fillStyle = hl;
       ctx.fillRect(cx, cy - rowH / 2, cellW - 4, rowH);
     }
+    // #1 = denyut emas: overlay berdenyut + garis kiri emas tebal
+    if (i === 0 && state.runners.length) {
+      ctx.fillStyle = `rgba(255,211,92,${0.08 + Math.sin(now / 300) * 0.06})`;
+      ctx.fillRect(cx, cy - rowH / 2, cellW - 4, rowH);
+      ctx.fillStyle = "#ffd35c";
+      ctx.fillRect(cx, cy - rowH / 2, 4, rowH);
+    }
+    // panah naik/turun rank (sesuai pergeseran sejak snapshot terakhir)
+    const delta = rankDelta.get(r.username);
+    if (delta && !locked) {
+      ctx.font = "700 15px 'Trebuchet MS', system-ui";
+      ctx.textAlign = "center";
+      ctx.fillStyle = delta > 0 ? "#8ef0a8" : "#ff8a7a";
+      ctx.fillText(delta > 0 ? "▲" : "▼", cx + cellW - 40, cy + 5);
+      ctx.textAlign = "left";
+    }
     // badge peringkat kotak flat
     const badge = `${i + 1}`;
     ctx.font = "700 18px 'Trebuchet MS', system-ui";
@@ -2004,6 +2137,17 @@ function drawFinishedOverlay() {
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, W, H);
 
+  // delay dramatis ±0,45 dtk sejak finish, lalu overlay "punch" masuk (zoom besar→pas)
+  const since = performance.now() - (state.finishAt || 0);
+  if (since < 450) return;
+  const pk = Math.min(1, (since - 450) / 320);
+  const e = 1 - Math.pow(1 - pk, 3);
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(1 + (1 - e) * 0.35, 1 + (1 - e) * 0.35);
+  ctx.globalAlpha = Math.min(1, pk * 1.6);
+  ctx.translate(-W / 2, -H / 2);
+
   ctx.textAlign = "center";
   // juara 1-3 berurutan place; kalau <3 pemain yang finish, slot sisa dikosongkan
   const top3 = state.runners.slice().sort((a, b) => (a.place || 99) - (b.place || 99)).slice(0, 3);
@@ -2065,7 +2209,7 @@ function drawFinishedOverlay() {
   drawImage("trophyGold", W / 2, 235, 120);
   const pulse = 1 + Math.sin(performance.now() / 320) * 0.03;
   ctx.save();
-  ctx.translate(W / 2, baseY + 178);
+  ctx.translate(W / 2, baseY + 168);
   ctx.scale(pulse, pulse);
   ctx.shadowColor = "rgba(255,255,255,.45)";
   ctx.shadowBlur = 22;
@@ -2073,9 +2217,13 @@ function drawFinishedOverlay() {
   ctx.font = "800 52px 'Trebuchet MS', system-ui";
   ctx.fillText(`@${state.winner.username}`, 0, 0);
   ctx.restore();
-  ctx.font = "500 30px 'Trebuchet MS', system-ui";
+  ctx.font = "700 34px 'Trebuchet MS', system-ui";
+  ctx.fillStyle = "#ffd35c";
+  ctx.fillText(`⭐ Total skor dukungan ronde ini: ${state.roundCoins.toLocaleString("id-ID")}`, W / 2, 1026);
+  ctx.font = "500 26px 'Trebuchet MS', system-ui";
   ctx.fillStyle = "#cfe3ff";
-  ctx.fillText("Tekan Reset atau Mulai untuk ronde baru", W / 2, 1040);
+  ctx.fillText("Tekan Reset atau Mulai untuk ronde baru", W / 2, 1058);
+  ctx.restore();
 }
 
 function drawBirds() {
@@ -2095,6 +2243,38 @@ function drawBirds() {
   }
 }
 
+function drawSpeedFx(now) {
+  // FX ngebut B5: garis-garis kecepatan horizontal menyapu trek + vignette emas.
+  const k = state.speedFx;
+  if (k <= 0) return;
+  const m = raceMetrics();
+  const a = Math.min(1, k * 1.4);            // alpha plateau lalu fade di ekor
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, m.top - 60, W, m.bottom - m.top + 120);
+  ctx.clip();
+  // speed lines: strip tipis putih-emas, scroll cepat ke kiri (arah berlawanan lari)
+  const scroll = now * 1.8;
+  for (let i = 0; i < 26; i++) {
+    const ly = m.top - 40 + ((i * 173 + 29) % (m.bottom - m.top + 80));
+    const lw = 130 + (i % 5) * 110;
+    const lx = ((-((scroll + i * 480) % (W + 600))) + W + 300) % (W + 600) - 300;
+    const g = ctx.createLinearGradient(lx, ly, lx + lw, ly);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.5, `rgba(${i % 3 ? "255,211,92" : "255,255,255"},${(0.22 + (i % 4) * 0.05) * a})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(lx, ly, lw, i % 4 === 0 ? 3 : 1.5);
+  }
+  ctx.restore();
+  // vignette emas lembut di tepi layar + kilau cepat di awal (kick saat grant)
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.85);
+  vg.addColorStop(0, "rgba(255,211,92,0)");
+  vg.addColorStop(1, `rgba(255,196,60,${0.28 * a})`);
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
 function draw(now) {
   ctx.clearRect(0, 0, W, H);
   ctx.save();
@@ -2108,7 +2288,9 @@ function draw(now) {
   drawBirds(now);    // merpati flyby di depan trek
   // bunting merah-putih DIHAPUS dari render (permintaan user) — aset tetap tersimpan
   ctx.restore();
+  drawSpeedFx(now);  // FX ngebut B5 (speed lines + vignette emas) — di belakang HUD biar teks tetap bersih
   if (!(state.phase === "finished" && state.winner)) {
+    if (state.phase === "lobby" && CONFIG.SHOW_TICKER) drawCtaTicker(now);   // CTA cara ikut saat menunggu pemain
     drawHeader(now);
     if (CONFIG.SHOW_MINIMAP) drawMinimap(now);
     else state.miniHit = [];         // matikan klik avatar saat minimap sembunyi
@@ -2358,6 +2540,7 @@ function initSettingsPanel() {
   if (typeof saved.midJoin === "boolean") CONFIG.MID_RACE_JOIN = saved.midJoin;
   if (saved.nameplate) CONFIG.NAMEPLATE_MODE = saved.nameplate;
   if (typeof saved.minimap === "boolean") CONFIG.SHOW_MINIMAP = saved.minimap;
+  if (typeof saved.ticker === "boolean") CONFIG.SHOW_TICKER = saved.ticker;
   if (typeof saved.leaderboard === "boolean") CONFIG.SHOW_LEADERBOARD = saved.leaderboard;
   if (typeof saved.camSnap === "boolean") CONFIG.CAM_SNAP = saved.camSnap;
   if (typeof saved.roundTimeout === "boolean") CONFIG.USE_ROUND_TIMEOUT = saved.roundTimeout;
@@ -2382,6 +2565,7 @@ function initSettingsPanel() {
   const elVol = document.getElementById("set-bgm-vol");
   const elMini = document.getElementById("set-minimap");
   const elLb = document.getElementById("set-leaderboard");
+  const elTicker = document.getElementById("set-ticker");
   const scrim = document.getElementById("settings-scrim");
   elFinish.value = CONFIG.FINISH_DISTANCE_M;
   elMid.checked = CONFIG.MID_RACE_JOIN;
@@ -2390,6 +2574,7 @@ function initSettingsPanel() {
   elVol.value = Math.round(bgmVol * 100);
   elMini.checked = CONFIG.SHOW_MINIMAP;
   elLb.checked = CONFIG.SHOW_LEADERBOARD;
+  if (elTicker) elTicker.checked = CONFIG.SHOW_TICKER;
   const elCamSnap = document.getElementById("set-cam-snap");
   if (elCamSnap) elCamSnap.checked = CONFIG.CAM_SNAP;
   const elRoundTO = document.getElementById("set-round-timeout");
@@ -2404,8 +2589,8 @@ function initSettingsPanel() {
   function renderStats() {
     CONFIG.BOOST_LEVELS.forEach((lvl, i) => {
       if (!statEls[i]) return;
-      statEls[i].textContent = i === 0 ? "= " + CONFIG.LIKE_TAPS_PER_BOOST + " \ud83d\udc97 atau " + lvl.minCoins + " \ud83e\ude99"
-                                       : "= " + lvl.minCoins + " \ud83e\ude99";
+      statEls[i].textContent = i === 0 ? "= " + CONFIG.LIKE_TAPS_PER_BOOST + " \ud83d\udc97 atau skor " + lvl.minCoins
+                                       : "= skor " + lvl.minCoins;
     });
   }
   CONFIG.BOOST_LEVELS.forEach((lvl, i) => {
@@ -2449,7 +2634,7 @@ function initSettingsPanel() {
         saveSettings({ tapsPerBoost: CONFIG.LIKE_TAPS_PER_BOOST });
       });
     }
-    mkField("gift-num", 1, 10000, 1, lvl.minCoins, isB1 ? "Atau gift dengan harga \u2265 sekian koin \u2192 Boost 1" : "Harga per-gift (koin) minimal agar memicu level ini \u2014 gift mahal dipecah ke beberapa level sekaligus", "\ud83e\ude99", (inp) => {
+    mkField("gift-num", 1, 10000, 1, lvl.minCoins, isB1 ? "Atau dukungan dengan skor \u2265 sekian \u2192 Boost 1" : "Skor dukungan minimal agar memicu level ini \u2014 dukungan besar dipecah ke beberapa level sekaligus", "\u2b50", (inp) => {
       lvl.minCoins = Math.max(1, Number(inp.value) || 1);
       inp.value = lvl.minCoins;
       persistGifts();
@@ -2460,7 +2645,7 @@ function initSettingsPanel() {
   renderStats();
   const legend = document.createElement("div");
   legend.className = "gift-legend";
-  legend.textContent = "\ud83d\udc97 tap/love \u00b7 \ud83e\ude99 harga per unit gift \u00b7 boost sejenis menumpuk DURASI";
+  legend.textContent = "\ud83d\udc97 tap/love \u00b7 \u2b50 skor dukungan \u00b7 boost sejenis menumpuk DURASI";
   rows.appendChild(legend);
 
   // wiring Umum → CONFIG live + persist
@@ -2475,6 +2660,7 @@ function initSettingsPanel() {
   elName.addEventListener("change", () => { CONFIG.NAMEPLATE_MODE = elName.value; saveSettings({ nameplate: elName.value }); });
   elMini.addEventListener("change", () => { CONFIG.SHOW_MINIMAP = elMini.checked; saveSettings({ minimap: elMini.checked }); });
   elLb.addEventListener("change", () => { CONFIG.SHOW_LEADERBOARD = elLb.checked; saveSettings({ leaderboard: elLb.checked }); });
+  if (elTicker) elTicker.addEventListener("change", () => { CONFIG.SHOW_TICKER = elTicker.checked; saveSettings({ ticker: elTicker.checked }); });
   if (elCamSnap) elCamSnap.addEventListener("change", () => { CONFIG.CAM_SNAP = elCamSnap.checked; saveSettings({ camSnap: elCamSnap.checked }); });
   if (elRoundTO) elRoundTO.addEventListener("change", () => {
     CONFIG.USE_ROUND_TIMEOUT = elRoundTO.checked;
@@ -2510,6 +2696,7 @@ function initSettingsPanel() {
     elName.value = CONFIG.NAMEPLATE_MODE;
     elMini.checked = CONFIG.SHOW_MINIMAP;
     elLb.checked = CONFIG.SHOW_LEADERBOARD;
+    if (elTicker) elTicker.checked = CONFIG.SHOW_TICKER;
     setPanel(panel.hidden);          // toggle
   });
   closeBtn.addEventListener("click", () => setPanel(false));
