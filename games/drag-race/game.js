@@ -6,18 +6,18 @@ import { tiktokConnector } from "../../shared/tiktok/tiktok-connector.js";
 // bereaksi ke balapan/visual. Untuk cepat: FINISH_DISTANCE_M = panjang lintasan.
 // ==========================================================================
 
-const W = 1920;
+const W = 1440;   // 4:3 — tengah antara landscape penuh & portrait; HUD & pelari terlihat besar di Live Studio
 const H = 1080;
 
 const CONFIG = {
   // ---- panjang lintasan ----
   FINISH_DISTANCE_M: 3000,           // panjang lintasan default (meter; nilai pertama kali sebelum user mengubah di Settings). Hanya mengubah DURASI balapan, TIDAK kecepatan.
   PX_PER_METER: 10,                  // skala: 1 m = sekian px dunia
-  WORLD_START_X: 140,                // px dunia garis start
+  WORLD_START_X: 1500,               // px dunia garis start — BERI RUANG di belakangnya untuk grid start (baris-baris pelari menunggu DI BELAKANG garis)
 
   // ---- pembatasan peserta & feed ----
   MAX_RUNNERS: 100,                    // peserta maksimum dalam satu lajur balapan
-  MIN_LANES: 5,                      // jumlah lajur tetap trek (5 pemain per baris grid start)
+  MIN_LANES: 4,                      // jumlah lajur tetap trek (4 pemain per baris grid start) — lajur lebih tinggi → karakter lebih besar
   MAX_TOASTS: 6,                     // jumlah toast di feed kanan
   TOAST_SECONDS: 3.6,                // berapa lama toast bertahan
 
@@ -60,13 +60,13 @@ const CONFIG = {
   LIKE_TAPS_PER_BOOST: 100,          // setiap N tap/love (like) dari satu penonton → 1× Boost 1 (via panel ⚙️ bisa diubah)
 
   // ---- kamera ----
-  ZOOM: 0.8,                         // 0,8 = zoom-out ringan; 1 = normal
-  CAM_ANCHOR_X: 960,                 // posisi layar sang pemimpin — 960 = tengah kanvas 1920 (ruang kiri-kanan seimbang)
+  ZOOM: 1.0,                         // 1 = ukuran penuh (semua elemen dunia ikut besar; 0,8 membuat tampilan "kecil" saat di-embed)
+  CAM_ANCHOR_X: 720,                 // posisi layar sang pemimpin — 720 = tengah kanvas 1440 (ruang kiri-kanan seimbang)
   CAM_SNAP: true,                    // true = TANPA pan halus: kamera LOCAT langsung saat posisi target berubah; false = smoothing normal
   CAM_SMOOTHING: 8,                  // besar = kamera lebih cepat mengejar pemimpin (naik dari 5: transisi terasa lebih gesit)
   CAM_FINISH_MARGIN: 380,            // ruang tambahan di belakang garis finish (px layar)
   CAM_FOCUS_SECONDS: 3,              // durasi kamera cutaway ke pemain yang di-boost, lalu kembali ke pemimpin
-  CAM_FOCUS_ANCHOR_X: 940,           // posisi layar pemain yang difokus (tengah kanvas)
+  CAM_FOCUS_ANCHOR_X: 700,           // posisi layar pemain yang difokus (tengah kanvas)
   CAM_FOCUS_COOLDOWN: 1.2,           // jeda minimum antar-pengalihan fokus (detik), anti kamera goyang
   CAM_FOCUS_MAX_BEHIND: 5000,        // batas jarak di belakang pemimpin agar tetap difokus (hanya untuk roam; boost selalu lolos)
   // roaming: kamera sesekali meninggalkan pemimpin untuk mengikuti pelari acak (boost SELALU memotong roam)
@@ -84,17 +84,21 @@ const CONFIG = {
 
   // ---- visual trek ----
   WORLD_TICK_M: 52,                  // jarak antar penanda meter di trek (m)
+  // ---- grid start (di BELAKANG garis start, seperti balapan sungguhan) ----
+  START_LINE_MARGIN: 60,             // jarak baris paling depan dari garis start (px dunia, ke belakang)
+  START_ROW_GAP: 150,                // jarak antar baris grid (px dunia); otomatis dipadatkan bila baris banyak
+  GRID_BACK_MARGIN: 60,              // kamera menarik min. ini px agar pelari paling belakang terlihat
   LANE_HEIGHT_MAX: 240,              // tinggi lajur maksimum (px)
   LANE_HEIGHT_MIN: 22,               // tinggi lajur minimum — lajur boleh sekecil ini agar semua peserta tetap tergambar
   LANE_FIT_ALL: true,                // true: lajur MENDESAK hingga semua peserta masuk trek (menembus MIN bila perlu), jangan pernah digambar keluar kanvas
   NAMEPLATE_MIN_LANE_H: 30,          // (mode "auto") di bawah tinggi lajur ini, nameplate disembunyikan
   NAMEPLATE_MODE: "on",            // "auto" = sembunyi saat lajur sempit | "on" = selalu tampil | "off" = tidak pernah tampil
-  LEADERBOARD_MAX_ROWS: 6,           // jumlah BARIS per kolom (leaderboard 2 kolom → tampung 12 nama); sisanya jadi baris "… N pelari lainnya"
+  LEADERBOARD_MAX_ROWS: 5,           // jumlah BARIS per kolom (leaderboard 2 kolom → tampung 10 nama); sisanya jadi baris "… N pelari lainnya"
   SHOW_MINIMAP: true,                // panel minimap atas — toggle via panel pengaturan ⚙️
   SHOW_LEADERBOARD: true,            // leaderboard kiri — toggle via panel pengaturan ⚙️
   LANE_DASH_LINES: false,            // garis putus-putus pembatas lajur — user: "jangan ada dash line" (default mati; prosedural canvas)
-  RUNNER_SIZE_RATIO: 0.95,           // tinggi karakter relatif terhadap tinggi lajur (besarkan)
-  RUNNER_SIZE_MAX: 220,              // ukuran karakter maksimum (px)
+  RUNNER_SIZE_RATIO: 1.1,            // tinggi karakter relatif terhadap tinggi lajur (besarkan; tumpang-tindih antar lajur diperbolehkan)
+  RUNNER_SIZE_MAX: 250,              // ukuran karakter maksimum (px)
   RUNNER_SIZE_MIN: 78,               // ukuran karakter minimum (px) — dengan peserta banyak, pelar BIH besar dan boleh tumpang-tindih antar lajur daripada tidak terlihat
   STRIDE_MIN: 110,                   // panjang langkah minimum (px dunia)
   STRIDE_RATIO: 0.85,                // panjang langkah relatif tinggi karakter
@@ -225,6 +229,8 @@ OPTIONAL_IMAGES.firework_3 = "assets/frames/firework_stage_3.png";
 OPTIONAL_IMAGES.firework_4 = "assets/frames/firework_stage_4.png";
 
 const canvas = document.getElementById("game-canvas");
+canvas.width = W;
+canvas.height = H;
 const ctx = canvas.getContext("2d");
 
 // ---------- asset loading ----------
@@ -305,16 +311,21 @@ function pushToast(text, color = "#ffd08a") {
 
 // boost pemain: level tersimpang + config aktif (fallback trail bila aset level belum ada)
 function boostOf(r, now) {
-  // Boost: tiap gift/tap = satu entry dengan masa aktif sendiri. Entry yang overlap
-  // MEMANJANGKAN DURASI, bukan menambah kecepatan — bonus kecepatan = speedAdd level
-  // TERTINGGI yang sedang aktif (dulu dijumlahkan → spam B1 = +20×N m/s "keceng").
+  // Boost: tiap gift/tap = satu entry dengan masa aktif sendiri. Entry level SAMA yang
+  // overlap sudah dilebur jadi satu di grantBoost (durasinya yang nambah, speed tetap).
+  // Level BEDA yang aktif bersamaan → kecepatan DIJUMLAH (mis. gift 25k = B4+B2 →
+  // +75+35 m/s selama keduanya jalan), VFX/kamera memakai level tertinggi.
   const act = (r.boosts || []).filter((b) => b.until > now);
   if (act.length) {
-    let idx = 0;
-    for (const b of act) { if (b.lvl > idx) idx = b.lvl; }
+    let idx = 0, add = 0;
+    const seen = new Set();
+    for (const b of act) {
+      if (!seen.has(b.lvl)) { seen.add(b.lvl); add += CONFIG.BOOST_LEVELS[b.lvl].speedAdd; }
+      if (b.lvl > idx) idx = b.lvl;
+    }
     const cfg = CONFIG.BOOST_LEVELS[idx];
     const trailKey = assets[cfg.trail] ? cfg.trail : CONFIG.BOOST_FALLBACK_TRAIL;
-    return { active: true, idx, cfg, trailKey, add: cfg.speedAdd };
+    return { active: true, idx, cfg, trailKey, add };
   }
   const cfg = CONFIG.BOOST_LEVELS[0];
   const trailKey = assets[cfg.trail] ? cfg.trail : CONFIG.BOOST_FALLBACK_TRAIL;
@@ -366,10 +377,11 @@ function addRunner(username, { silent = false, joinDelay = 0, randomChar = false
     boostFxUntil: 0,     // performance.now(): sampai kapan trail FX per-pemain digambar (max dari semua boost)
     boosts: [],          // antrian boost kumulatif: { lvl, until(performance.now()) }
     wobbleSeed: Math.random() * 10,
-    // posisi start: baris ke-N tepat 150px dunia di depan garis start (tanpa acak) → grid rapi
-    // lurus per lajur; tiap baris diisi atas→bawah lajur 1-4, baris berikutnya di depannya.
-    // Meluruh (→0) menjelang finish sehingga semua tetap finis tepat di gerbang.
-    startOffPx: midRace ? 0 : (Math.floor(laneIdx / CONFIG.MIN_LANES) % 10) * 150,
+    // posisi start: grid rapi DI BELAKANG garis start (seperti balapan sungguhan) —
+    // baris ke-0 terdekat garis (margin kecil), tiap baris berikutnya makin ke belakang.
+    // Jarak antar baris dipadatkan otomatis agar muat di layar. Meluruh (→0) menjelang
+    // finish sehingga semua tetap finis tepat di gerbang.
+    startOffPx: midRace ? 0 : -(CONFIG.START_LINE_MARGIN + (Math.floor(laneIdx / CONFIG.MIN_LANES) % 10) * Math.min(CONFIG.START_ROW_GAP, Math.floor((CONFIG.WORLD_START_X - CONFIG.START_LINE_MARGIN - 200) / 10))),
     laneOff: 0,                       // grid rapi: tidak ada geser acak dalam lajur
     joinAt: performance.now() + joinDelay,   // awal animasi "pop masuk" (bisa di-stagger utk bot massal)
     joinFx: false,                    // sudah ditembakkan FX-nya?
@@ -580,6 +592,19 @@ window.publishTikTokEvent = (input) => tiktokConnector.publish(input);
 
 // Beri boost lvl (0..4) ke runner, combo memperpanjang durasi. Dipakai jalur GIFT (B2–B5)
 // maupun jalur TAP/LOVE (B1). `who` utk toast.
+// Pecah harga per-unit gift jadi beberapa level boost (greedy dari level tertinggi,
+// tiap level maksimal 1× per gift). Mis. ambang 1/5/10/20/30: 25 → [B4,B2]; 99 →
+// [B5,B4,B3,B2,B1]; 3 → [B1]; 4 → [B1] (sisa di bawah ambang terendah dibuang).
+function splitGiftCoins(coins) {
+  const out = [];
+  let sisa = coins;
+  for (let i = CONFIG.BOOST_LEVELS.length - 1; i >= 1; i--) {
+    if (sisa >= CONFIG.BOOST_LEVELS[i].minCoins) { out.push(i); sisa -= CONFIG.BOOST_LEVELS[i].minCoins; }
+  }
+  if (out.length === 0 && sisa >= CONFIG.BOOST_LEVELS[0].minCoins) out.push(0);   // tidak ada level ≥2 → B1 saja
+  return out;
+}
+
 function grantBoost(runner, lvl, combo, who, now = performance.now()) {
   const cfg = CONFIG.BOOST_LEVELS[lvl];
   let seconds = Math.min(cfg.seconds * combo, CONFIG.BOOST_COMBO_MAX_SECONDS);
@@ -670,13 +695,13 @@ function handleTikTokEvent(event) {
     }
     if (!runner) { pushToast(`🎁 ${event.username}: ketik join / gift ≥${CONFIG.BOOST_LEVELS[0].minCoins} koin untuk ikut`, "#ff8a7a"); return; }
     if (runner.finished) { pushToast(`🎁 ${event.username} sudah finish`, "#9fb4d8"); return; }
-    // Level boost gift ditentukan dari HARGA PER-GIFT (coinValue). B1 dual-path: gift
-    // ≥ ambang B1 (default 1 koin) sudah memicu B1; makin mahal → level lebih tinggi.
-    // Combo (giftCount/repeatCount) tidak menaikkan level — hanya memPERPANJANG DURASI
-    // (akumulasi waktu: detik dasar × jumlah combo, dibatasi BOOST_COMBO_MAX_SECONDS).
-    let lvl = 0;                                        // dasar = B1 (idx 0) — kini bisa dari gift
-    for (let i = 1; i < CONFIG.BOOST_LEVELS.length; i++) if (unitCoins >= CONFIG.BOOST_LEVELS[i].minCoins) lvl = i;
-    grantBoost(runner, lvl, combo, event.username);
+    // Level boost gift: HARGA PER-GIFT (coinValue) DIPECAH ke ambang-ambang (greedy),
+    // mis. 25 koin = B4 (20) + B2 (5) → dua boost sekaligus: kecepatan DIJUMLAH selama
+    // keduanya aktif, durasi tiap level jalan sendiri (4 dtk B4? → sesuai cfg masing2).
+    // Sisa < ambang B2 tapi ≥ ambang B1 → 1× B1. Combo (giftCount) memperpanjang
+    // durasi tiap bagian (detik dasar × combo, di-cap BOOST_COMBO_MAX_SECONDS).
+    const parts = splitGiftCoins(unitCoins);
+    for (const p of parts) grantBoost(runner, p, combo, event.username);
     return;
   }
   if (event.type === "like") {
@@ -859,6 +884,23 @@ function update(dt, now) {
   const camSubject = focus || leader;
   const anchor = focus ? CONFIG.CAM_FOCUS_ANCHOR_X : CAM_ANCHOR;
   let targetCam = camSubject ? runnerWorldX(camSubject) - anchor / ZOOM : 0;
+  // kamera "mengikuti paket": selama seluruh pelari masih muat ±1 layar, kamera
+  // TIDAK boleh melewati pelari paling belakang — jadi grid start, joiner baru di
+  // belakang, dan penyusulan selalu terbingkai. Setelah paket terpisah >1 layar,
+  // kamera kembali murni mengikuti pemimpin.
+  if (!focus && state.runners.length) {
+    const xs = state.runners.filter((r) => !r.finished).map(runnerWorldX);
+    if (xs.length) {
+      const rearX = Math.min(...xs), frontX = Math.max(...xs);
+      if (state.phase === "lobby" || state.phase === "countdown") {
+        targetCam = (rearX + frontX) / 2 - anchor / ZOOM;   // bingkai grid start utuh (di belakang garis)
+      } else if (frontX - rearX <= VIEW_W() - CONFIG.GRID_BACK_MARGIN * 2) {
+        targetCam = Math.min(targetCam, rearX - CONFIG.GRID_BACK_MARGIN / ZOOM);
+      }
+    } else if (state.phase === "lobby") {
+      targetCam = WORLD.startX - anchor / ZOOM;             // lobi kosong: tetap sorot garis start
+    }
+  }
   const maxCam = WORLD.finishX + CONFIG.CAM_FINISH_MARGIN / ZOOM - VIEW_W();
   targetCam = Math.min(maxCam, Math.max(0, targetCam));
   // smoothing: kunci manual (paling tinggi) > roam lembut > cutaway boost > pengikut pemimpin
@@ -1088,15 +1130,15 @@ function hexToRgba(hex, a) {
 function drawToasts() {
   // style FLAT: kotak tanpa radius, tanpa border, lebih kecil
   ctx.textAlign = "left";
-  ctx.font = "700 17px 'Trebuchet MS', system-ui";
+  ctx.font = "700 22px 'Trebuchet MS', system-ui";
   const x1 = W - 28;                      // tepi kanan panel
-  const rowH = 30, padX = 10, maxW = 520;
+  const rowH = 44, padX = 14, maxW = 620;
   for (let i = 0; i < state.toasts.length; i++) {
     const t = state.toasts[i];
     const age = t.life - t.time;          // detik sejak muncul
     const slideIn = Math.min(1, age * 4); // slide dari kanan
     const fadeOut = Math.min(1, t.time * 2);
-    const y = (CONFIG.SHOW_MINIMAP ? 112 : 24) + i * (rowH + 4);
+    const y = (CONFIG.SHOW_MINIMAP ? 128 : 24) + i * (rowH + 6);
     const tw = Math.min(ctx.measureText(t.text).width, maxW);
     const bw = tw + padX * 2;
     const px = x1 - bw + (1 - easeOut(slideIn)) * (bw + 60);
@@ -1105,7 +1147,7 @@ function drawToasts() {
     ctx.fillRect(px, y - rowH + 6, bw, rowH);   // kotak tajam, flat
     ctx.fillStyle = t.color;
     ctx.fillRect(px, y - rowH + 6, 4, rowH);     // aksen kiri tipis kotak
-    ctx.fillText(t.text, px + padX + 4, y - 2, tw);
+    ctx.fillText(t.text, px + padX + 6, y - 8, tw);
     ctx.globalAlpha = 1;
   }
 }
@@ -1350,7 +1392,7 @@ function drawBackground(now) {
     ctx.fillStyle = "rgba(255,255,255,.6)";
     ctx.fillText("S T A R T", 0, 9);
     ctx.restore();
-    const startH = Math.min(200, m.laneH * 1.3);
+    const startH = Math.min(300, m.laneH * 1.5);
     drawImage("startGate", startSx, m.top - startH * 0.5 + 20, startH);
   }
 
@@ -1363,12 +1405,12 @@ function drawBackground(now) {
     ctx.fillStyle = "rgba(255,255,255,.20)";
     for (let yy = m.top + 10; yy < m.bottom - 6; yy += 26) ctx.fillRect(sx - 1.5, yy, 3, 14);
     // label di bahu atas
-    ctx.font = "800 21px 'Trebuchet MS', system-ui";
+    ctx.font = "800 26px 'Trebuchet MS', system-ui";
     ctx.textAlign = "center";
     const label = `${Math.round((wx - WORLD.startX) / CONFIG.PX_PER_METER)}m`;
-    const lw = ctx.measureText(label).width + 16;
+    const lw = ctx.measureText(label).width + 20;
     ctx.fillStyle = "rgba(10,14,26,.72)";
-    roundRect(sx - lw / 2, m.top - 46, lw, 30, 9);
+    roundRect(sx - lw / 2, m.top - 52, lw, 38, 10);
     ctx.fill();
     ctx.fillStyle = "#ffd08a";
     ctx.fillText(label, sx, m.top - 25);
@@ -1395,7 +1437,7 @@ function drawBackground(now) {
         }
       }
     }
-    const gateH = Math.min(260, Math.max(170, (m.bottom - m.top) * 0.24));
+    const gateH = Math.min(360, Math.max(240, (m.bottom - m.top) * 0.3));
     drawImage("finishGate", finSx, m.top + gateH * 0.42, gateH);
   }
 }
@@ -1571,7 +1613,7 @@ function drawRunners(now) {
     // nameplate di atas kepala — mode manual via CONFIG.NAMEPLATE_MODE / tombol dock 🏷️
     const showName = CONFIG.NAMEPLATE_MODE === "on"
       || (CONFIG.NAMEPLATE_MODE !== "off" && m.laneH >= CONFIG.NAMEPLATE_MIN_LANE_H);
-    const npFont = Math.max(12, Math.min(18, size * 0.22));   // pelat sedang: jelas tapi tidak menutupi
+    const npFont = Math.max(16, Math.min(26, size * 0.16));   // pelat sedang: jelas tapi tidak menutupi
     if (!showName) { ctx.restore(); continue; }
     // pelat nama ikut "hadir" setelah pop hampir selesai: fade + naik halus
     const plateA = popping ? Math.max(0, Math.min(1, (jAge / CONFIG.JOIN_POP_MS - 0.45) / 0.4)) : 1;
@@ -1685,7 +1727,7 @@ function drawHeader(now) {
 // ---------- minimap: garis START→FINISH dengan avatar bulat tiap pelari ----------
 // Avatar bot = inisial + warna stabil dari hash username. Kalau runner.avatarUrl
 // diisi (mis. foto profil TikTok nanti), foto otomatis dipakai dan dipotong bulat.
-const MINI = { x1: 620, x2: 1836, cy: 46 };
+const MINI = { x1: 560, x2: 1356, cy: 54 };
 
 function hashHue(str) {
   let h = 0;
@@ -1740,7 +1782,7 @@ function drawMinimap(now) {
   const { x1, x2, cy } = MINI, w = x2 - x1;
   // panel melebar: status race di kiri + garis START→FINISH + avatar pelari
   ctx.fillStyle = "rgba(6,8,18,.68)";
-  roundRect(x1 - 44, 8, w + 88, 96, 10);
+  roundRect(x1 - 44, 6, w + 88, 108, 10);
   ctx.fill();
   // status (dipindah ke sini karena panel judul sudah dihapus)
   const statusText = {
@@ -1752,15 +1794,15 @@ function drawMinimap(now) {
     finished: "Ronde selesai — Reset / Mulai lagi"
   }[state.phase];
   ctx.textAlign = "left";
-  ctx.font = "700 15px 'Trebuchet MS', system-ui";
+  ctx.font = "700 22px 'Trebuchet MS', system-ui";
   ctx.fillStyle = state.phase === "running" ? "#8ef0a8" : "#cfe0f5";
-  ctx.fillText(statusText, x1 - 34, 26);
-  ctx.font = "600 12px 'Trebuchet MS', system-ui";
+  ctx.fillText(statusText, x1 - 34, 36);
+  ctx.font = "700 16px 'Trebuchet MS', system-ui";
   ctx.fillStyle = "#9fd8a8";
-  ctx.fillText("START", x1 - 4, cy + 38);
+  ctx.fillText("START", x1 - 4, cy + 44);
   ctx.textAlign = "right";
   ctx.fillStyle = "#ffd35c";
-  ctx.fillText("🏁 FINISH", x2 + 40, cy + 38);
+  ctx.fillText("🏁 FINISH", x2 + 40, cy + 44);
   // garis lintasan (dua lajur tipis)
   const grd = ctx.createLinearGradient(x1, 0, x2, 0);
   grd.addColorStop(0, "rgba(120,160,210,.25)");
@@ -1786,7 +1828,7 @@ function drawMinimap(now) {
     const py = cy;
     const now2 = performance.now();
     const boosted = r.boosts.some((b) => b.until > now2);
-    const rad = boosted ? 17 : 15;
+    const rad = boosted ? 21 : 19;
     if (r.avatarUrl && !r.avatarImg && !r.avatarLoading) avatarCanvas(r);  // picu load foto
     ctx.save();
     ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.closePath();
@@ -1796,7 +1838,7 @@ function drawMinimap(now) {
     ctx.lineWidth = 3;
     ctx.strokeStyle = boosted ? "#ff8a3d" : r.finished ? "#ffd35c" : `hsl(${hashHue(r.username)} 70% 62%)`;
     ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.stroke();
-    if (r.place === 1) { ctx.font = "14px system-ui"; ctx.textAlign = "center"; ctx.fillText("👑", px, py - rad - 4); }
+    if (r.place === 1) { ctx.font = "20px system-ui"; ctx.textAlign = "center"; ctx.fillText("👑", px, py - rad - 6); }
     hits.push({ runner: r, x: px - rad - 2, y: py - rad - 2, w: rad * 2 + 4, h: rad * 2 + 4 });
   }
   state.miniHit = hits;
@@ -1805,13 +1847,13 @@ function drawMinimap(now) {
   if (hv && state.runners.includes(hv.runner)) {
     const px = x1 + Math.max(0, Math.min(1, hv.runner.progress)) * (w - 8) + 4;
     const label = `${hv.runner.username} · ${Math.round(hv.runner.progress * 100)}%` + (hv.runner.finished ? ` · P${hv.runner.place}` : "");
-    ctx.font = "700 13px 'Trebuchet MS', system-ui";
-    const tw = ctx.measureText(label).width + 14;
+    ctx.font = "700 18px 'Trebuchet MS', system-ui";
+    const tw = ctx.measureText(label).width + 16;
     const bx = Math.min(x2 + 44 - tw, Math.max(x1 - 40, px - tw / 2));
     ctx.fillStyle = "rgba(8,11,22,.92)";
-    roundRect(bx, cy + 22, tw, 22, 6); ctx.fill();
+    roundRect(bx, cy + 26, tw, 30, 6); ctx.fill();
     ctx.fillStyle = "#e8eef7"; ctx.textAlign = "left";
-    ctx.fillText(label, bx + 7, cy + 37);
+    ctx.fillText(label, bx + 8, cy + 46);
   }
 }
 
@@ -1820,11 +1862,11 @@ function drawLeaderboard() {
   const MAX_ROWS = CONFIG.LEADERBOARD_MAX_ROWS; // baris per kolom; sisanya diringkas
   const shown = rows.length > MAX_ROWS * 2 ? rows.slice(0, MAX_ROWS * 2) : rows;
   const cols = shown.length > MAX_ROWS ? 2 : 1;
-  const rowH = 30;
-  const x0 = 24, w0 = cols === 2 ? 460 : 280, y0 = LAYOUT.boardY;
+  const rowH = 42;
+  const x0 = 24, w0 = cols === 2 ? 440 : 340, y0 = LAYOUT.boardY;
   const overflow = rows.length > shown.length;
-  const padTop = 34, padBot = 10;
-  const panelH = Math.max(rows.length ? 58 : 84, padTop + Math.min(shown.length, MAX_ROWS) * rowH + (overflow ? 22 : 0) + padBot);
+  const padTop = 46, padBot = 12;
+  const panelH = Math.max(rows.length ? 72 : 104, padTop + Math.min(shown.length, MAX_ROWS) * rowH + (overflow ? 30 : 0) + padBot);
   const framePad = 10;                               // konten masuk dari tepi frame
   // urutan presisi: backdrop rounded digambar DULUAN, lalu frame neon menumpuk di atas —
   // tepi backdrop terpotong border frame sehingga bentuk yang terlihat = radius dalam frame
@@ -1840,36 +1882,36 @@ function drawLeaderboard() {
   }
   // judul panel
   ctx.textAlign = "left";
-  ctx.font = "700 14px 'Trebuchet MS', system-ui";
+  ctx.font = "700 20px 'Trebuchet MS', system-ui";
   ctx.fillStyle = "#8fa1bd";
-  ctx.fillText("LEADERBOARD", x0 + 10, y0 + 20);
+  ctx.fillText("LEADERBOARD", x0 + 12, y0 + 28);
   // dua pill di header: [🔀 roam on/off] [🎥 AUTO/MANUAL] — klik via canvas
-  ctx.font = "700 12px 'Trebuchet MS', system-ui";
+  ctx.font = "700 16px 'Trebuchet MS', system-ui";
   const camTxt = state.camMode === "manual" ? "🎥 MANUAL" : "🎥 AUTO";
-  const camW = ctx.measureText(camTxt).width + 16;
-  const camR = { x: x0 + w0 - camW - 6, y: y0 + 6, w: camW, h: 20 };
+  const camW = ctx.measureText(camTxt).width + 18;
+  const camR = { x: x0 + w0 - camW - 8, y: y0 + 8, w: camW, h: 28 };
   const roamTxt = CONFIG.CAM_ROAM_ENABLED ? "🔀 ON" : "🔀 OFF";
-  const roamW = ctx.measureText(roamTxt).width + 16;
-  const roamR = { x: camR.x - roamW - 6, y: y0 + 6, w: roamW, h: 20 };
+  const roamW = ctx.measureText(roamTxt).width + 18;
+  const roamR = { x: camR.x - roamW - 8, y: y0 + 8, w: roamW, h: 28 };
   ctx.fillStyle = state.camMode === "manual" ? "rgba(94,180,255,.22)" : "rgba(255,255,255,.08)";
   ctx.fillRect(camR.x, camR.y, camR.w, camR.h);
   ctx.fillStyle = CONFIG.CAM_ROAM_ENABLED ? "rgba(142,240,168,.18)" : "rgba(255,255,255,.08)";
   ctx.fillRect(roamR.x, roamR.y, roamR.w, roamR.h);
   ctx.textAlign = "center";
   ctx.fillStyle = state.camMode === "manual" ? "#8ecbff" : "#9fb4d8";
-  ctx.fillText(camTxt, camR.x + camR.w / 2, camR.y + 15);
+  ctx.fillText(camTxt, camR.x + camR.w / 2, camR.y + 20);
   ctx.fillStyle = CONFIG.CAM_ROAM_ENABLED ? "#8ef0a8" : "#778399";
-  ctx.fillText(roamTxt, roamR.x + roamR.w / 2, roamR.y + 15);
+  ctx.fillText(roamTxt, roamR.x + roamR.w / 2, roamR.y + 20);
   state.lbHit = { camR, roamR, rows: [] };          // untuk hit-test klik canvas
   ctx.fillStyle = "rgba(255,255,255,.12)";
-  ctx.fillRect(x0, y0 + 28, w0, 1);
+  ctx.fillRect(x0, y0 + 38, w0, 1);
 
   if (!rows.length) {
     ctx.textAlign = "center";
     ctx.fillStyle = "#8fa1bd";
-    ctx.font = "600 15px 'Trebuchet MS', system-ui";
-    ctx.fillText("Belum ada pelari —", x0 + w0 / 2, y0 + 56);
-    ctx.fillText("kirim komentar join/gabung untuk ikut", x0 + w0 / 2, y0 + 76);
+    ctx.font = "600 19px 'Trebuchet MS', system-ui";
+    ctx.fillText("Belum ada pelari —", x0 + w0 / 2, y0 + 66);
+    ctx.fillText("kirim komentar join/gabung untuk ikut", x0 + w0 / 2, y0 + 92);
     return;
   }
   const cellW = (w0 - 8) / cols;
@@ -1880,7 +1922,7 @@ function drawLeaderboard() {
     const col = cols === 2 && i >= MAX_ROWS ? 1 : 0;
     const rowInCol = cols === 2 && i >= MAX_ROWS ? i - MAX_ROWS : i;
     const cx = x0 + 4 + col * cellW;
-    const cy = y0 + 32 + rowInCol * rowH + rowH / 2;
+    const cy = y0 + 46 + rowInCol * rowH + rowH / 2;
     state.lbHit.rows.push({ runner: r, x: cx, y: cy - rowH / 2, w: cellW - 4, h: rowH });
     const boosted = r.boosts.some((b) => b.until > now);
     const locked = state.camMode === "manual" && state.camLockRunner === r;
@@ -1898,35 +1940,35 @@ function drawLeaderboard() {
     }
     // badge peringkat kotak flat
     const badge = `${i + 1}`;
-    ctx.font = "700 13px 'Trebuchet MS', system-ui";
+    ctx.font = "700 18px 'Trebuchet MS', system-ui";
     ctx.textAlign = "center";
     const badgeColor = i === 0 ? "#ffd35c" : i === 1 ? "#c8d4e6" : i === 2 ? "#d99a5f" : "#4a566e";
     ctx.fillStyle = badgeColor;
-    ctx.fillRect(cx + 6, cy - 9, 18, 18);
+    ctx.fillRect(cx + 7, cy - 12, 24, 24);
     ctx.fillStyle = "#10162a";
-    ctx.fillText(badge, cx + 15, cy + 4);
+    ctx.fillText(badge, cx + 19, cy + 6);
     // nama
     ctx.textAlign = "left";
-    ctx.font = i === 0 ? "700 16px 'Trebuchet MS', system-ui" : "600 15px 'Trebuchet MS', system-ui";
+    ctx.font = i === 0 ? "700 22px 'Trebuchet MS', system-ui" : "600 21px 'Trebuchet MS', system-ui";
     ctx.fillStyle = locked ? "#8ecbff" : i === 0 ? "#ffd35c" : r.finished ? "#8fa1bd" : "#e8eefb";
     const label = `@${r.username}`;
-    ctx.fillText(label, cx + 30, cy + 5, cellW - 44);
+    ctx.fillText(label, cx + 40, cy + 7, cellW - 58);
     if (locked) {
-      ctx.font = "700 12px 'Trebuchet MS', system-ui";
-      ctx.fillText("🔒", cx + cellW - 26, cy + 4);
+      ctx.font = "700 16px 'Trebuchet MS', system-ui";
+      ctx.fillText("🔒", cx + cellW - 30, cy + 6);
     }
     if (boosted) {
-      ctx.font = "700 13px 'Trebuchet MS', system-ui";
+      ctx.font = "700 18px 'Trebuchet MS', system-ui";
       ctx.fillStyle = "#ff8a3d";
-      const lw = Math.min(ctx.measureText(label).width, cellW - 44);
-      ctx.fillText("🔥", cx + 34 + lw, cy + 4);
+      const lw = Math.min(ctx.measureText(label).width, cellW - 58);
+      ctx.fillText("🔥", cx + 44 + lw, cy + 6);
     }
   }
   // baris ringkasan bila daftar dipotong
   if (overflow) {
-    const fy = y0 + 32 + MAX_ROWS * rowH + 14;
+    const fy = y0 + 46 + MAX_ROWS * rowH + 20;
     ctx.textAlign = "center";
-    ctx.font = "600 13px 'Trebuchet MS', system-ui";
+    ctx.font = "600 17px 'Trebuchet MS', system-ui";
     ctx.fillStyle = "#8fa1bd";
     ctx.fillText(`… ${rows.length - shown.length} pelari lainnya`, x0 + w0 / 2, fy);
   }
@@ -1976,7 +2018,7 @@ function drawFinishedOverlay() {
   ctx.restore();
 
   // podium 3 anak tangga: tengah paling tinggi (juara 1)
-  const baseY = 800, stepW = 420, heights = [300, 250, 190];        // tengah (P1) tertinggi, kiri (P2), kanan (P3)
+  const baseY = 800, stepW = 380, heights = [300, 250, 190];        // tengah (P1) tertinggi, kiri (P2), kanan (P3)
   const slots = [                                                    // x, lantai y, skala
     { x: W / 2,           y: baseY - heights[0], k: 1.0 },
     { x: W / 2 - stepW,   y: baseY - heights[1], k: 0.8 },
@@ -2013,15 +2055,17 @@ function drawFinishedOverlay() {
     ctx.beginPath(); ctx.arc(slot.x, ay, rad + 2, 0, Math.PI * 2); ctx.stroke();
     ctx.font = `${Math.round(54 * slot.k)}px system-ui`;
     ctx.fillText(medal[s], slot.x, ay - rad - 14);
-    ctx.font = `800 ${Math.round(34 * slot.k)}px 'Trebuchet MS', system-ui`;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(`@${r.username}`, slot.x, baseY + 86);
+    if (s !== 0) {   // juara 1 tidak perlu nama kecil — nama besarnya sudah tampil di bawah
+      ctx.font = `800 ${Math.round(34 * slot.k)}px 'Trebuchet MS', system-ui`;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(`@${r.username}`, slot.x, baseY + 86);
+    }
   }
   // piala di atas tengah (di antara judul dan avatar juara 1)
   drawImage("trophyGold", W / 2, 235, 120);
   const pulse = 1 + Math.sin(performance.now() / 320) * 0.03;
   ctx.save();
-  ctx.translate(W / 2, baseY + 140);
+  ctx.translate(W / 2, baseY + 178);
   ctx.scale(pulse, pulse);
   ctx.shadowColor = "rgba(255,255,255,.45)";
   ctx.shadowBlur = 22;
@@ -2205,7 +2249,7 @@ nameBtn.addEventListener("click", cycleNameMode);
 nameBtn.textContent = `🏷️ ${(CONFIG.NAMEPLATE_MODE || "auto").toUpperCase()}`;
 
 // ---------- klik/hover leaderboard: kunci kamera ke pemain (mode manual) ----------
-// koordinat mouse → koordinat kanvas internal (1920×1080), sesuai hit-rect dari drawLeaderboard
+// koordinat mouse → koordinat kanvas internal (1440×1080), sesuai hit-rect dari drawLeaderboard
 function canvasPos(ev) {
   const rect = canvas.getBoundingClientRect();
   return { x: (ev.clientX - rect.left) * (W / rect.width), y: (ev.clientY - rect.top) * (canvas.height / rect.height) };
@@ -2405,7 +2449,7 @@ function initSettingsPanel() {
         saveSettings({ tapsPerBoost: CONFIG.LIKE_TAPS_PER_BOOST });
       });
     }
-    mkField("gift-num", 1, 10000, 1, lvl.minCoins, isB1 ? "Atau gift dengan harga \u2265 sekian koin \u2192 Boost 1" : "Harga per-gift (koin) minimal agar memicu level ini", "\ud83e\ude99", (inp) => {
+    mkField("gift-num", 1, 10000, 1, lvl.minCoins, isB1 ? "Atau gift dengan harga \u2265 sekian koin \u2192 Boost 1" : "Harga per-gift (koin) minimal agar memicu level ini \u2014 gift mahal dipecah ke beberapa level sekaligus", "\ud83e\ude99", (inp) => {
       lvl.minCoins = Math.max(1, Number(inp.value) || 1);
       inp.value = lvl.minCoins;
       persistGifts();
