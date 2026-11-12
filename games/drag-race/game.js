@@ -71,7 +71,7 @@ const CONFIG = {
   CAM_FOCUS_COOLDOWN: 1.2,           // jeda minimum antar-pengalihan fokus (detik), anti kamera goyang
   CAM_FOCUS_MAX_BEHIND: 5000,        // batas jarak di belakang pemimpin agar tetap difokus (hanya untuk roam; boost selalu lolos)
   // roaming: kamera sesekali meninggalkan pemimpin untuk mengikuti pelari acak (boost SELALU memotong roam)
-  CAM_ROAM_ENABLED: false,           // 🔀 auto-follow roam: default OFF — AUTO murni = fokus pemimpin; nyalakan via pill 🔀 di leaderboard
+  CAM_ROAM_ENABLED: true,            // 🔀 auto-follow roam: default ON — kamera sesekali ikut pelari lain; matikan via pill 🔀 di leaderboard
   CAM_ROAM_SECONDS: 5,               // durasi fokus ke pelari acak sebelum kembali ke pemimpin
   CAM_ROAM_EVERY_MIN: 12,            // jeda acak antar-roam (detik) — jarang agar tidak pusing
   CAM_ROAM_EVERY_MAX: 20,
@@ -1701,39 +1701,36 @@ function drawRunners(now) {
     // bug lama: dengan 40 peserta laneH ±16px → label tercekik jadi ~25px, tak terbaca
     const tw = Math.min(ctx.measureText(label).width, Math.max(size * 1.5, 100));
     const py = y - size * 0.72;
-    // === nameplate "mewah": pelat gelap bergradien + bingkai emas metalis tipis + teks cream ===
-    const npH = npFont + 12;
-    const bx = x - tw / 2 - 11, bw = tw + 22, by = py - npH / 2;
-    // bayangan lembut di bawah pelat → terasa melayah premium
+    // === nameplate "kaca": kapsul semi-transparan, bersih & lembut ===
+    const npH = npFont + 10;
+    const bx = x - tw / 2 - 10, bw = tw + 20, by = py - npH / 2;
+    const npR = npH / 2;                                // pil penuh (kapsul)
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,.55)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 3;
-    const plate = ctx.createLinearGradient(0, by, 0, by + npH);
-    plate.addColorStop(0, "rgba(26,32,56,.9)");
-    plate.addColorStop(0.5, "rgba(10,13,26,.93)");
-    plate.addColorStop(1, "rgba(3,5,12,.96)");
-    ctx.fillStyle = plate;
-    ctx.fillRect(bx, by, bw, npH);
+    ctx.globalAlpha = plateA * 0.72;                    // sedikit transparan — tidak menutupi trek
+    ctx.shadowColor = "rgba(0,0,0,.45)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+    const glass = ctx.createLinearGradient(0, by, 0, by + npH);
+    glass.addColorStop(0, "rgba(30,38,62,.78)");
+    glass.addColorStop(1, "rgba(8,12,24,.82)");
+    ctx.fillStyle = glass;
+    roundRect(bx, by, bw, npH, npR);
+    ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // garis tepi halus + sorotan tipis di tepi atas → kesan kaca, bukan bingkai emas
+    ctx.strokeStyle = boosted ? "rgba(255,190,90,.75)" : "rgba(255,255,255,.28)";
+    ctx.lineWidth = 1;
+    roundRect(bx + 0.5, by + 0.5, bw - 1, npH - 1, npR - 0.5);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.16)";
+    roundRect(bx + 5, by + 1.5, bw - 10, 2, 1);
+    ctx.fill();
     ctx.restore();
-    // bingkai 1px: emas metalis bergradien (gelap→terang→gelap) — bukan neon satu warna
-    const gold = ctx.createLinearGradient(bx, 0, bx + bw, 0);
-    gold.addColorStop(0, "rgba(140,105,30,.5)");
-    gold.addColorStop(0.5, "rgba(255,225,140,.85)");
-    gold.addColorStop(1, "rgba(140,105,30,.5)");
-    ctx.fillStyle = gold;
-    ctx.fillRect(bx, by, bw, 1);                       // atas
-    ctx.fillRect(bx, by + npH - 1, bw, 1);             // bawah
-    ctx.fillRect(bx, by + 1, 1, npH - 2);              // kiri
-    ctx.fillRect(bx + bw - 1, by + 1, 1, npH - 2);     // kanan
-    // kilau halus hanya di dua sudut atas → kesan logam terpahat, tidak seragam kaku
-    ctx.fillStyle = "rgba(255,240,190,.9)";
-    ctx.fillRect(bx, by, 6, 1); ctx.fillRect(bx, by, 1, 4);
-    ctx.fillRect(bx + bw - 6, by, 6, 1); ctx.fillRect(bx + bw - 1, by, 1, 4);
-    // teks: reguler (tidak bold), cream lembut dengan shadow tipis — saat boost aksen amber
-    ctx.shadowColor = "rgba(0,0,0,.85)";
-    ctx.shadowBlur = 2;
-    ctx.fillStyle = boosted ? "#ffe2b8" : r.finished && r.place === 1 ? "#ffdf8f" : "#fdf6e2";
+    // teks: reguler, putih bersih dengan shadow tipis — boost amber, juara 1 emas
+    ctx.globalAlpha = plateA;
+    ctx.shadowColor = "rgba(0,0,0,.8)";
+    ctx.shadowBlur = 3;
+    ctx.fillStyle = boosted ? "#ffd9a0" : r.finished && r.place === 1 ? "#ffdf8f" : "#f2f6ff";
     ctx.fillText(label, x, py + npFont * 0.35 + (1 - plateA) * 8, tw);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
@@ -1807,9 +1804,7 @@ function drawHeader(now) {
     const cy = (m.top + m.bottom) / 2;
     ctx.save();
     ctx.translate(W / 2, cy);
-    // pelat lentera
-    ctx.fillStyle = "rgba(8,10,20,.72)";
-    roundRect(-230, -240, 460, 300, 18); ctx.fill();
+    // (pelat gelap lentera DIHAPUS — lampu & angka langsung di atas langit/lintasan)
     // tiga bohlam: merah (3) → kuning (2) → hijau (1), menyala kumulatif
     const lampOn = 4 - n;                                      // detik berjalan ke-1..3
     const lampCols = [["#ff4d4d", "#5a1f1f"], ["#ffcf5c", "#6b5320"], ["#7cf39a", "#1f5a30"]];
@@ -1830,11 +1825,14 @@ function drawHeader(now) {
     // angka besar pop tiap detik
     const pop = 1 + (1 - Math.min(1, frac * 3)) * 0.55;
     ctx.scale(pop, pop);
-    ctx.shadowColor = "rgba(255,255,255,.55)";
-    ctx.shadowBlur = 26;
+    ctx.shadowColor = "rgba(0,0,0,.6)";
+    ctx.shadowBlur = 22;
     ctx.fillStyle = "#ffffff";
     ctx.font = "800 190px 'Trebuchet MS', system-ui";
     ctx.textAlign = "center";
+    ctx.strokeStyle = "rgba(10,14,26,.55)";
+    ctx.lineWidth = 10;
+    ctx.strokeText(String(n), 0, 66);
     ctx.fillText(String(n), 0, 66);
     ctx.restore();
   }
